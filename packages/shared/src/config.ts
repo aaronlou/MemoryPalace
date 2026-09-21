@@ -75,6 +75,26 @@ export interface Config {
      * useful.
      */
     rescueMinRelevance: number
+    /**
+     * Rerank relevance below which the SMART path vetoes a candidate outright.
+     *
+     * Measured on the real stack, the reranker is the good signal and the score
+     * is not: irrelevant pairs scored 0.502/0.553 cosine with a rerank
+     * relevance of 0.050, yet still cleared `minScore` because a lone semantic
+     * hit normalises to an RRF of 1.0. On the smart path, "not useful here" is
+     * therefore binding. 0 disables the veto.
+     */
+    minRerankRelevance: number
+    /**
+     * `auto` escalates to the smart path when the fast path's best answer rests
+     * on cosine alone and that cosine is below this.
+     *
+     * The blended score cannot express "low confidence" — a lone semantic hit
+     * collects the same RRF, importance and recency priors as a corroborated one
+     * — so this reads the one signal that does say the answer is unresolved.
+     * 0 disables the rule (auto then only escalates on a weak score).
+     */
+    escalateBelowSemanticSimilarity: number
   }
   logLevel: "debug" | "info" | "warn" | "error"
   /** Directory for JSONL extraction-run logs and eval output. */
@@ -162,15 +182,56 @@ const DEFAULT_MODELS: Record<LlmProviderName, { extraction: string; adjudication
 const DEFAULT_SEMANTIC_FLOOR: Record<EmbeddingProviderName, number> = {
   // Hashing bag-of-tokens: unrelated text is near-orthogonal.
   mock: 0.15,
-  // Chosen by sweeping the golden dataset, not by intuition: at 0.45 recall is
-  // unchanged (R@5 0.917) while precision and negative accuracy hit their
-  // maximum (P@5 0.833, negative 1.000). Below 0.35 false positives climb
-  // sharply. 0.45 also gives slightly more headroom than 0.50 for hard
-  // paraphrases, at no measured cost.
-  ollama: 0.45,
+  // Swept on the real stack (bge-m3 + DeepSeek) rather than inherited. bge-m3
+  // puts unrelated Chinese text at 0.50-0.55, which is *higher* than the
+  // paraphrases it needs to retrieve (0.523, 0.560), so the old 0.45 admitted
+  // noise. The sweep, recall suite, 14 cases:
+  //
+  //   floor  fast P@5 / R@5 / negative   smart P@5 / R@5 / negative
+  //   0.35   0.488 / 1.000 /  20%        0.893 / 1.000 / 100%
+  //   0.45   0.750 / 1.000 /  60%        0.929 / 1.000 / 100%
+  //   0.55   0.679 / 0.857 /  80%        0.929 / 1.000 / 100%
+  //   0.65   0.714 / 0.786 / 100%        0.929 / 1.000 / 100%
+  //
+  // 0.65 is where negative accuracy reaches its maximum, which is the criterion
+  // this value has always been chosen by — and `auto` and `smart` are
+  // indifferent to it (the rescue recovers recall, the veto removes noise), so
+  // the only thing the floor still decides is what an explicit `mode: "fast"`
+  // call may return. The cost is visible in the table: the fast path gives up
+  // R@5 1.000 for 100% negative accuracy. Set 0.45-0.55 to trade back.
+  ollama: 0.65,
+  // NOT re-swept here: these inherit the earlier 0.45 calibration. The floor is
+  // a property of the model, so re-run the sweep above before trusting them.
   openai: 0.45,
   cohere: 0.45,
   google: 0.45,
+}
+
+/**
+ * How much standing the configured model's relevance judgement has.
+ *
+ * The smart path treats a low rerank relevance as a veto, and `auto` escalates
+ * to it when the fast path's answer is uncorroborated. Both are sound only if
+ * the reranker is competent, and the built-in stand-in is not: it scores
+ * relevance from token overlap, so a Chinese memory that shares one distinctive
+ * term with the query scores ~0.09 while a real reranker scores the same pair
+ * near 0.95. Trusting that would delete legitimate recall — measured offline:
+ * mock smart recall fell from 0.714/0.786 to 0.500/0.500.
+ *
+ * This is the same reasoning as the per-provider semantic floor: the right value
+ * is a property of the model, not of the system. A stand-in gets 0 (no
+ * judgement), real models get the thresholds the real stack was swept to.
+ */
+const DEFAULT_RERANK_TRUST: Record<
+  LlmProviderName,
+  { minRerankRelevance: number; escalateBelowSemanticSimilarity: number }
+> = {
+  // Cannot judge relevance; its verdict has no standing, so nothing vetoes and
+  // `auto` keeps its score-based escalation only.
+  mock: { minRerankRelevance: 0, escalateBelowSemanticSimilarity: 0 },
+  deepseek: { minRerankRelevance: 0.3, escalateBelowSemanticSimilarity: 0.6 },
+  openai: { minRerankRelevance: 0.3, escalateBelowSemanticSimilarity: 0.6 },
+  anthropic: { minRerankRelevance: 0.3, escalateBelowSemanticSimilarity: 0.6 },
 }
 
 const DEFAULT_EMBEDDING_MODELS: Record<EmbeddingProviderName, { model: string; dim: number }> = {
@@ -223,6 +284,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
 
   const llmDefaults = DEFAULT_MODELS[llmProvider]
   const embedDefaults = DEFAULT_EMBEDDING_MODELS[embeddingProvider]
+  const rerankTrust = DEFAULT_RERANK_TRUST[llmProvider]
 
   const config: Config = {
     databaseUrl: env("DATABASE_URL") ?? "postgresql://mp@127.0.0.1:55432/memory_palace",
@@ -251,6 +313,14 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
       minScore: floatEnv("MP_RECALL_MIN_SCORE", 0.18),
       semanticRescueMargin: floatEnv("MP_RECALL_SEMANTIC_RESCUE_MARGIN", 0.15),
       rescueMinRelevance: floatEnv("MP_RECALL_RESCUE_MIN_RELEVANCE", 0.6),
+      minRerankRelevance: floatEnv(
+        "MP_RECALL_MIN_RERANK_RELEVANCE",
+        rerankTrust.minRerankRelevance,
+      ),
+      escalateBelowSemanticSimilarity: floatEnv(
+        "MP_RECALL_ESCALATE_BELOW_SEMANTIC",
+        rerankTrust.escalateBelowSemanticSimilarity,
+      ),
     },
     api: {
       port: intEnv("MP_API_PORT", 8787),

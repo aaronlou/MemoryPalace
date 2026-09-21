@@ -8,11 +8,12 @@ in how much is stored; it is in whether an agent retrieves the right thing at th
 right moment, and whether it can tell what is *currently* true from what *used* to
 be.
 
-> Status: v0.1, working end to end. 170 tests green. The mock providers let the
+> Status: v0.1, working end to end. 181 tests green. The mock providers let the
 > whole system — including the evaluation suite — run with no API key and no
 > network. Cold start from an empty directory takes about 90 seconds, of which
-> most is dependency installation. CI runs lint, migrations, the build and the
-> whole suite on every push, on mock providers, so it costs nothing.
+> most is dependency installation. CI runs lint, migrations, the build, the whole
+> suite and the walkthrough twice on every push, on mock providers, so it costs
+> nothing.
 
 ---
 
@@ -40,6 +41,11 @@ Or all of it at once: `pnpm setup`.
 naturally, memories form, an agent recalls them, the situation then changes, and
 **both** questions — "what do you use now?" and "what did you use six months
 ago?" — stay answerable from the same store.
+
+It also **checks the claims it prints** and exits non-zero if one of them is false,
+so it works as a smoke test rather than a wall of output to skim. That is not
+decorum: two real defects were hiding in that output, and both are described under
+"what the walkthrough found" below.
 
 ---
 
@@ -192,16 +198,18 @@ related".
 | `pnpm embedding:reembed` | recompute every embedding with the configured model |
 | `pnpm dev:api` | HTTP API + web UI + MCP-over-HTTP |
 | `pnpm dev:mcp` | MCP server on stdio |
-| `pnpm demo` | end-to-end walkthrough (`--reset` to start clean) |
+| `pnpm demo` | end-to-end walkthrough that verifies its own claims (`--reset` to start clean) |
 | `pnpm backup [file]` | write a full JSON backup (default `backups/<date>.json`) |
 | `pnpm restore <file>` | replace all data from a backup |
 | `pnpm backup check <file>` | verify a backup **without touching the database** |
 | `pnpm test` | full test suite (needs the database running) |
 | `pnpm eval` | run the evaluation suite |
 | `pnpm eval --repeat N` | run it N times and report mean/min/max |
+| `pnpm eval --recall-mode fast\|smart\|auto` | measure the path an agent actually uses |
 | `pnpm eval --embedding mock\|real` | vary the embedder independently of the LLM |
-| `pnpm eval:compare A B` | diff two eval runs after a prompt change |
-| `pnpm build` | typecheck and emit `dist/` |
+| `pnpm eval --filter rec-` | one suite only, when that is all that changed |
+| `pnpm eval:compare A B` | diff two eval runs — refuses to compare across a changed dataset or recall mode |
+| `pnpm build` | typecheck and emit `dist/`, plus `scripts/` and `evals/` (`tsconfig.tools.json`) |
 | `pnpm lint` / `format` | Biome |
 
 ---
@@ -215,42 +223,51 @@ something.
 
 | Provider | What it is | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
 |---|---|---|---|---|---|
-| `oracle` | returns the expected answer — calibrates the *harness* | **1.000** | **100%** | 0.714 / 0.786 | 100% |
-| `null` | stores nothing | **0.000** | 10% | — | — |
-| `mock` | rule-based, no API key | 0.750 | 30% | 0.714 / 0.786 | 100% |
-| **DeepSeek + local embeddings** | the real stack | **0.933** | **100%** | *re-measuring* | 100% |
+| `oracle` | returns the expected answer — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.857 | 100% |
+| `null` | stores nothing | **0.000** | 10% | 0.714 / 0.786 | 100% |
+| `mock` | rule-based, no API key | 0.750 | 30% | 0.750 / 0.857 | 100% |
+| **DeepSeek + bge-m3, `smart`** | the real stack | **0.967** | **100%** | **0.929 / 1.000** | **100%** |
+| **DeepSeek + bge-m3, `auto`** | what an agent gets when it passes no mode | — | — | 0.893 / 1.000 | 100% |
 
 The real stack is DeepSeek (`deepseek-chat` for extraction, `deepseek-reasoner`
-for adjudication) with a local embedding model served by Ollama, so no memory text
-leaves the machine. Roughly $0.014 per full evaluation.
+for adjudication) with bge-m3 served by Ollama, so no memory text leaves the
+machine. Roughly $0.019 per full evaluation, or $0.058 for `--repeat 3`. The
+offline rows are insensitive to the recall mode: without a model worth trusting,
+`fast`, `smart` and `auto` all answer from the scores alone.
 
 The oracle and null runs are asserted in the test suite: if a perfect model does
 not score 1.0 and an empty one 0.0, then a real score like "F1 = 0.75" is
 measuring the harness rather than the system.
 
-**Three honest notes about this table.**
+**Four honest notes about this table.**
 
-*The recall suite gained two cases, and the offline numbers moved because of it.*
-`mock` and `oracle` recall went from 0.750 / 0.833 to **0.714 / 0.786** — not
-because anything regressed, but because `rec-013` is a case the offline stack
-**structurally cannot pass**: a hashing embedder has no notion of a paraphrase, so
-a question that shares no surface vocabulary with its memory is invisible to every
-route. `rec-014` is the matching guard — a negative that the offline stack does
-pass. Same direction as the correction below: a benchmark that only contains
-questions the offline stand-in can answer is measuring the stand-in.
+*The offline recall numbers moved in two directions at once, and both are
+explained.* The generator moved them **down**: the recall suite gained `rec-013`,
+a hard paraphrase the offline stack **structurally cannot pass**, because a
+hashing embedder has no notion of a paraphrase. `rec-014` is the matching guard —
+a negative the offline stack does pass. Then the implementation moved them **up**:
+`includeHistory` no longer clamps the validity window to now (see below), which
+fixed `rec-010`, a case that had been failing since the suite was written. Net,
+`mock` and `oracle` went from 0.750 / 0.833 to **0.750 / 0.857** — the dataset got
+one case harder and the system got one case better.
 
-*The real-stack recall column is being re-measured, not carried over.* The previous
-0.833 / 0.917 was over a different set of recall questions, so quoting it beside
-the new offline numbers would be comparing different exams. The extraction and
-adjudication columns are unaffected — those suites did not change. To fill it in:
+*The real-stack numbers are all from the same 14-case recall suite*, measured with
+`--repeat 3` for `smart` (P@5 0.929 over three runs, stable) and single runs for
+`auto`/`fast`. Comparing them to the 0.833 / 0.917 published earlier would be
+comparing different exams: the suite has changed, the embedder has changed, and
+the recall path has changed.
 
-```bash
-pnpm eval --provider real --recall-mode smart --repeat 3    # rescue enabled
-MP_RECALL_SEMANTIC_RESCUE_MARGIN=0 pnpm eval --provider real --recall-mode smart --repeat 3
-```
+*`auto` is the row that matters, because it is the default.* It reaches the smart
+path's precision on this suite — P@5 0.893, R@5 1.000, negative accuracy 100% — for
+**15 model calls instead of 27**, because it only escalates answers that nothing
+corroborates. Both numbers are measured, not estimated; `pnpm eval --recall-mode
+auto` reproduces them.
 
-The second run disables the rescue, so the pair isolates it. `rec-013` is the case
-that separates them.
+*The two paths answer different questions, and `fast` is now precision-first.*
+Measured on the same suite, `fast` gives P@5 0.714 / R@5 0.786 / negative 100%: it
+declines more often and is never wrong about what it returns. `smart` gives up some
+precision to answer more. Neither is "the" score, which is why the report prints
+the mode it measured.
 
 *The mock scores 0.750, not the 0.900 it scored on the first version of the
 dataset.* That earlier number was inflated: the dataset had been written while
@@ -323,15 +340,30 @@ ranges over repeated runs and refuses to call an overlapping difference a change
 - **`DUPLICATE` vs `REFINE`.** Genuinely ambiguous — a restatement that adds one
   word is defensibly either. Three cases list both as acceptable rather than
   asserting the author's preference, so they can no longer register as failures.
+- **The fast path's precision/recall tradeoff is unresolvable without a model.**
+  Measured across four floors, it can have R@5 1.000 with 40% of negative queries
+  answered, or 100% negative accuracy with three misses. There is no plateau in
+  between, because with bge-m3 an unrelated pair can score higher than a relevant
+  one. Only the smart path can separate them, which is why `auto` escalates rather
+  than the floor being tuned harder.
+- **Both new mechanisms are only as good as the reranker.** The veto deletes
+  recall the fast path would have returned, and the escalation spends two model
+  calls, so a cheap or weak reranker makes the smart path *worse* than the fast
+  one — measured, and the reason the thresholds default to 0 under the mock
+  provider. Set `MP_RECALL_MIN_RERANK_RELEVANCE=0` to make the smart path only
+  ever add, never subtract.
 - **Hard paraphrases.** The similarity floor is a coarse filter (see above), so a
   question that shares little surface vocabulary with the memory it needs can fall
-  below it. The smart path now rescues exactly these, but only when the reranker
-  confirms them — so the mechanism is live only where a real reranker is running.
+  below it. The smart path rescues exactly these, but only when the reranker
+  confirms them, so the mechanism is live only where a real reranker is running.
   Under the mock providers it is **inert by construction**: the mock embedder
   derives similarity from shared tokens, so it has no notion of a paraphrase, and
   the check on it is that it changes nothing (measured: identical scores with the
   margin at 0.15 and at 0). `rec-013` is the live case, and it fails offline on
-  purpose. A stronger embedder is still the complementary fix, not a substitute.
+  purpose. Worth restating plainly, since the earlier version of this document got
+  it wrong: with bge-m3 the case is *not* below the floor (0.523) and never needed
+  rescuing — the mechanism's measured value on this suite is precision (60% → 100%
+  negative accuracy), not paraphrase recall.
 
 ### Language drift, and a correction to my own estimate
 
@@ -381,6 +413,69 @@ never mattered. It was rewritten to seed the earlier memory under a deliberately
 different type, and now fails on the bug with the message *"no relation was
 written, so adjudication never ran on the earlier memory"*.
 
+### Two more bugs, found by running the walkthrough twice
+
+Both of these were hiding in `pnpm demo`'s own output, and neither was reachable
+from the suites. Recorded for the same reason as the case above.
+
+**A repeat crashed the write.** Running `pnpm demo` a second time without
+`--reset` died with a foreign key violation:
+
+```
+error: insert or update on table "memories" violates foreign key constraint
+       "memories_origin_observation_id_fkey"
+detail: Key (origin_observation_id)=(obs_01M322VD...) is not present in table "observations".
+```
+
+`insertObservation` deduplicates by content hash with `ON CONFLICT ... DO NOTHING`
+— by design, so re-ingesting the same text cannot store it twice. But `remember`
+carried on with the id it had *proposed*, so the memory it then wrote referenced an
+observation row that was never created. The write was lost, and with it the user's
+statement.
+
+The idempotency test covers the same text three times and passed throughout, which
+is the interesting part: a repeat adjudicated **DUPLICATE** is applied as
+`reinforce`, an UPDATE, which never touches the foreign key. The bug needs a repeat
+whose decision is an **insert** — REFINE or SUPERSEDE — and that is what the demo's
+second run produced, because by then the neighbour it compared against had already
+been refined into different wording. Reachable in production for the same reason,
+with nothing exotic involved.
+
+The fix is a contract, not a patch: `insertObservation` now returns **the row that
+holds this content**, existing one included, and `remember` uses that row for
+everything downstream. The port says so, so a future adapter cannot quietly break
+it again.
+
+**A goal became a fact.** Step 6 printed `active Effect-TS goal memories: 0
+(should stay 1)` — in an output nobody had read closely, for as long as the demo
+existed. The check was reading the *type*; the type had drifted. The same fact,
+re-worded, re-extracts under a different type ("我最近开始系统学习 Effect-TS"
+reads as a `goal`, "我最近在系统学习 Effect-TS" as a `fact`), and REFINE inherited
+the *candidate's* type — so paraphrasing yourself moved a memory between context
+groups and, worse, between write policies (`decision` needs confirmation, `fact`
+does not). A refinement now inherits its origin's type; SUPERSEDE still keeps the
+candidate's, because a genuine change of state can change the category without
+contradicting ADR-0004's lesson.
+
+So the demo now checks the claims it prints — current versions of the *fact*
+whatever type, is the store's state what it should be — and exits non-zero when one
+is false. It is the first command a new user runs; it should not be the least
+verified thing in the repository.
+
+### The scripts were typechecked by nothing
+
+Fixing the above needed a type error to surface at runtime first: a duplicate
+`const before` in `scripts/demo.ts` compiled fine and threw when the demo ran.
+`pnpm test` transpiles without checking, and the root build only referenced
+`packages/` and `apps/` — so every CLI in `scripts/` and the whole eval harness in
+`evals/` were unchecked. `tsconfig.tools.json` now covers them (no emit: they are
+entry points, not artifacts), and `pnpm build` runs it.
+
+Switching it on immediately found two latent errors that had been invisible: a
+`as never` cast in the harness that was papering over an `acceptDecisions` type too
+narrow to hold the `UNKNOWN` the harness itself infers, and a type re-exported from
+a module that never exported it.
+
 ### Why the embedder matters more than it looks
 
 Switching from the hashing stand-in to a real embedder **improved** recall
@@ -410,6 +505,12 @@ The embedding model is a **separate quality axis from the language model**, and
 the eval harness can vary them independently — `pnpm eval --provider oracle
 --embedding real` isolates the embedder's contribution.
 
+**Recall trust thresholds** — `MP_RECALL_MIN_RERANK_RELEVANCE` and
+`MP_RECALL_ESCALATE_BELOW_SEMANTIC` decide how much authority the reranker's
+judgement has. Both default to 0 under `MP_LLM_PROVIDER=mock` (a stand-in cannot
+judge relevance) and to 0.3 / 0.6 under the real providers. Setting either to 0
+makes the smart path only ever add candidates, never remove them.
+
 ### Switching embedding model
 
 ```bash
@@ -432,21 +533,29 @@ once a real model is used — which is exactly what happened the first time the
 embedder was switched.
 
 The floor was then set from a sweep over the golden dataset rather than from
-intuition. Recall is insensitive to it (the lexical and entity routes carry
-recall); precision and negative accuracy are not:
+intuition. That sweep has been **re-run on the real stack** (bge-m3 + DeepSeek,
+the 14-case recall suite), because the mechanisms below changed what the floor
+still decides:
 
-| floor | P@5 | R@5 | negative accuracy | forbidden hits |
-|---|---|---|---|---|
-| 0.15 | 0.444 | 0.917 | 0.250 | 0.250 |
-| 0.25 | 0.667 | 0.917 | 0.500 | 0.083 |
-| 0.30 | 0.750 | 0.917 | 0.750 | 0.000 |
-| 0.40 | 0.750 | 0.917 | 0.750 | 0.000 |
-| **0.45** | **0.833** | **0.917** | **1.000** | 0.000 |
-| **0.50** | **0.833** | **0.917** | **1.000** | 0.000 |
+| floor | `fast` P@5 / R@5 / negative | `smart` P@5 / R@5 / negative |
+|---|---|---|
+| 0.35 | 0.488 / 1.000 /  20% | 0.893 / 1.000 / 100% |
+| **0.45** *(old default)* | 0.750 / 1.000 /  60% | 0.929 / 1.000 / 100% |
+| 0.55 | 0.679 / 0.857 /  80% | 0.929 / 1.000 / 100% |
+| **0.65** *(current default)* | 0.714 / 0.786 / 100% | 0.929 / 1.000 / 100% |
 
-0.45 and 0.50 are identical, so the default sits on a small plateau rather than a
-knife edge; 0.45 is used because it gives a little more headroom at no measured
-cost.
+Two things to read out of it. **The smart path barely notices the floor** — the
+rescue recovers the recall it costs and the veto removes the noise it admits — so
+the floor is no longer "the effective knob" it used to be. **The fast path is
+where the tradeoff lives**, because cosine is all it has: it can have R@5 1.000
+with 40% of negative queries answered, or 100% negative accuracy and three misses,
+and nothing in between is a plateau. 0.65 was chosen by this document's own
+long-standing criterion — the point where negative accuracy reaches its maximum —
+which costs the fast path R@5 0.786. `MP_RECALL_MIN_SEMANTIC_SIMILARITY=0.45`
+trades back, and is one environment variable away.
+
+The hosted providers still carry the earlier 0.45. The floor is a property of the
+model, and none of them have been swept here; that is stated rather than guessed.
 
 The **final** blended-score threshold (`MP_RECALL_MIN_SCORE`) was swept against
 the floor and turns out not to be a useful lever:
@@ -460,10 +569,12 @@ floor  minScore=0.18  0.30  0.40  0.50
 
 Raising it does not separate relevant from irrelevant results, because an
 irrelevant memory that clears the semantic floor also collects the same
-importance and recency priors as a relevant one. It only starts cutting genuine
-results at 0.50. **The semantic floor is the effective knob; the final threshold
-is not.** The option is kept because the balance can differ under a different
-embedder or on the smart path, where a reranker changes the score distribution.
+importance and recency priors as a relevant one. **The reason is structural, and
+it is the same reason the smart path now vetoes explicitly:** a lone semantic hit
+normalises to an RRF of 1.0, and that term alone (0.45 on the smart weights)
+outweighs whatever the model thought of it. Re-weighting cannot fix a term whose
+range depends on how many candidates a query happened to return; a veto can, and
+does (measured: negative accuracy 60% → 100% on the smart path).
 
 **A correction worth recording.** An earlier version of this document claimed a
 clean separation — "irrelevant 0.164-0.400, relevant 0.599-0.800". That was drawn
@@ -475,10 +586,8 @@ RELEVANT    n=9  min 0.432  median 0.597  max 0.800
 IRRELEVANT  n=7  min 0.152  median 0.213  max 0.799
 ```
 
-So a single absolute cosine threshold **cannot** cleanly separate relevant from
-irrelevant with this embedder. The threshold still earns its place — it removes
-the bulk of the noise at no cost to recall — but it is a coarse filter, not a
-relevance test, and a hard paraphrase can fall below it. One live example:
+The paragraph that followed this table used to give a live example of a hard
+paraphrase falling *below* the floor:
 
 ```
 query : 讲技术概念的时候应该怎么组织？
@@ -486,13 +595,18 @@ memory: 用户希望在被讲解 TypeScript 时，先了解整体结构和设计
 cosine: 0.432   -> below the 0.45 floor, so it is not recalled
 ```
 
-Lowering the floor to 0.40 would catch that case and drop negative accuracy from
-1.000 to 0.750 everywhere else — buying one true positive with several false ones.
+**Re-measured with bge-m3, that pair scores 0.523, not 0.432** — above both floors,
+so it was recalled all along and the example proved nothing about the floor. The
+supposed fix ("lower the floor to 0.40") would have bought nothing and cost
+negative accuracy. What the same sweep *did* show is sharper than the old story:
+bge-m3 puts genuinely unrelated pairs at **0.502 and 0.553**, i.e. *higher* than a
+relevant paraphrase at 0.523. With this embedder there is no floor that separates
+them, and the earlier table's confidence about "0.45 is where precision and
+negative accuracy peak" does not survive the measurement.
 
-A stronger multilingual embedder is a real fix (this is the concrete argument for
-`bge-m3`, which is purpose-built for Chinese retrieval), but it is a different
-model, not a different system. Within one model, the resolution is that **the
-smart path does not have to trust cosine the way the fast path does.**
+That is the real problem the two mechanisms below solve, and neither of them is a
+threshold: the fast path keeps a floor and accepts its tradeoff, while the smart
+path stops pretending a cosine can answer a question the model can answer better.
 
 ### The smart path probes below the floor, and pays for it with a confirmation
 
@@ -523,8 +637,9 @@ So on the smart path the floor is split in two:
   floor would have given. Degradation goes to the old behaviour, never past it.
 - **The rescue may only add candidates; it never changes the treatment of a memory
   another route already matched.** Anything the lexical or entity route matched
-  has evidence of its own, and the fast path would have returned it — so `smart`
-  can never recall strictly less than `fast`.
+  has evidence of its own, and the fast path would have returned it — so the
+  rescue itself never makes `smart` recall less than `fast`. (A *veto* deliberately
+  can, for the semantic-only case; that is the subject of the next section.)
 - The **fast path never probes**: without a confirmation signal, a lowered floor
   admits noise and nothing else.
 
@@ -539,6 +654,84 @@ a lone *relevant* one, so no per-query statistic can tell them apart — and suc
 rule has to lower the floor for low-scoring queries, which is precisely where the
 irrelevant hits live. It trades a tunable constant for a heuristic that cannot be
 calibrated. ADR-0006 has the full argument.
+
+### The reranker's "not useful" verdict is binding
+
+The rescue asks the model to confirm candidates the score rejected. The measured
+problem was the mirror image: candidates the score *accepted* and the model
+rejected.
+
+```
+                                        semantic   rerank   final   outcome
+rec-013  relevant paraphrase              0.523     0.950    0.873   recalled
+rec-008  "what do I use?" vs a preference 0.502     0.050    0.563   recalled  <- wrong
+rec-014  the mnemonic technique            0.553     0.050    0.558   recalled  <- wrong
+```
+
+The model was right both times it said "not useful", and its judgement was worth
+0.35 of a score that had already reached 0.56 from rank alone. So on the smart
+path **a rerank relevance below `MP_RECALL_MIN_RERANK_RELEVANCE` (default 0.3,
+the rerank rubric's own "not useful here" band) vetoes the candidate outright.**
+
+Two guards keep it from being reckless. The veto only applies when the reranker
+*answered* — if it failed, there is no verdict to honour, and treating an outage as
+a relevance judgement would be worse than the noise it removes. And it applies
+only on the smart path, which is only reached by an explicit `mode: "smart"` or by
+`auto` deciding the answer was unresolved.
+
+Measured on the recall suite, same model, same embedder:
+
+```
+                     P@5     R@5     negative accuracy   forbidden hits
+veto off             0.714   0.929   60.0%               7.1%
+veto on              0.893   0.929   100.0%              0.0%
+```
+
+No recall lost: everything the veto removed was wrong.
+
+**`auto` escalates on the same evidence.** The default mode runs the fast path
+first, and its escalation rule used to be "the blended score is below 0.42" —
+which cannot fire for the cases above, because a lone semantic hit scores ~0.78
+whatever it is. It now also escalates when the fast path's best answer rests on
+cosine alone and that cosine is below `MP_RECALL_ESCALATE_BELOW_SEMANTIC`
+(default 0.6): no lexical or entity match means nothing corroborates it, and the
+smart path is the only place that can be resolved.
+
+```
+auto, 14 recall cases        P@5     R@5     negative   model calls
+escalation on evidence off   0.750   1.000   60.0%       5
+escalation on evidence on    0.893   1.000   100.0%     15
+```
+
+Fifteen calls against twenty-seven for "always smart": the corroborated answers
+never leave the fast path, and the ones that escalate are the ones that needed it.
+ADR-0007 records the alternatives and why re-weighting the score cannot do this.
+
+**Trust is per provider, like the floor.** Both mechanisms are only sound if the
+reranker is competent, and the built-in stand-in is not — it scores relevance from
+token overlap, so a Chinese memory sharing one distinctive term with the query
+gets ~0.09 where a real reranker gives ~0.95. Trusting that deleted legitimate
+recall (measured: mock smart fell from 0.714/0.786 to 0.500/0.500). So the two
+thresholds default to **0 under `MP_LLM_PROVIDER=mock`** and to 0.3 / 0.6 under
+the real providers: a stand-in's verdict has no standing. Disable them explicitly
+with the two environment variables if you configure a model whose judgement you do
+not want to bind.
+
+### A history question is not clamped to now
+
+`includeHistory` used to mean less than it sounds like. The validity window was
+still clamped to the present, and a superseded memory's `valid_until` is in the
+past by definition — so "what did I use before?" could only return what is *still*
+true. `rec-010` had been failing since the suite was written for exactly this
+reason.
+
+Now an explicit `asOf` wins, and otherwise the window is only clamped when history
+was **not** asked for. A question understood as historical (or a caller setting
+`includeHistory`) searches the whole timeline and lets ranking and the reranker
+decide what belongs in the answer. Measured: `rec-010` passes, `rec-009`/`rec-011`
+are unaffected, and the offline suite went from 0.714/0.786 to 0.750/0.857.
+ADR-0008 records why the alternative — requiring callers to pass a past `asOf` —
+was rejected.
 
 ---
 

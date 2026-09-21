@@ -58,3 +58,11 @@ jobs:
       - run: pnpm build
 
       - run: pnpm test
+
+      # The walkthrough verifies its own claims, and the SECOND run is the one
+      # that matters: it re-ingests text the first run already stored, which is
+      # the only place the dedup-and-repeat path is exercised end to end. A
+      # foreign key violation lived exactly there, reachable only by running the
+      # demo twice, and nothing in the suite could see it.
+      - run: pnpm demo --reset
+      - run: pnpm demo

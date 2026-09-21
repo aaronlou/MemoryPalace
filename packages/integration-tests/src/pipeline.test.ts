@@ -4,6 +4,7 @@ import type {
   GenerateObjectResult,
   LlmPort,
   Memory,
+  MemoryStatus,
   MemoryType,
 } from "@memory-palace/core"
 import { newId } from "@memory-palace/shared"
@@ -128,6 +129,11 @@ class BandEmbedding implements EmbeddingPort {
       if (text.includes("整体骨架") || text.includes("Phoenix")) {
         return this.unit(1, 0.9)
       }
+      // A weak match: cosine 0.447, the band where the fast path cannot tell
+      // "vaguely relevant" from "vaguely irrelevant" on its own.
+      if (text.includes("低相似")) {
+        return this.unit(1, 2)
+      }
       return this.unit(0, 0, 1)
     })
   }
@@ -147,7 +153,13 @@ class BandEmbedding implements EmbeddingPort {
 /** Insert a memory together with its embedding, as the persistence stage would. */
 async function seedWithEmbedding(
   rt: TestRuntime,
-  entries: Array<{ type: MemoryType; content: string }>,
+  entries: Array<{
+    type: MemoryType
+    content: string
+    status?: MemoryStatus
+    validFrom?: string
+    validUntil?: string
+  }>,
 ): Promise<void> {
   for (const [i, e] of entries.entries()) {
     const memory: Memory = {
@@ -157,9 +169,11 @@ async function seedWithEmbedding(
       content: e.content,
       confidence: 0.92,
       importance: 0.75,
-      validFrom: "2026-01-01T00:00:00.000Z",
+      validFrom: e.validFrom ?? "2026-01-01T00:00:00.000Z",
+      validUntil: e.validUntil,
       recordedAt: `2026-0${i + 1}-01T00:00:00.000Z`,
-      status: "active",
+      supersededAt: e.status === "superseded" ? "2026-06-01T00:00:00.000Z" : undefined,
+      status: e.status ?? "active",
       reinforcedCount: 0,
     }
     await rt.storage.store.insertMemory(memory)
@@ -235,6 +249,40 @@ describe("design doc §21 — the canonical case study", () => {
     expect(runs.length).toBeGreaterThan(0)
     expect(runs[0]?.promptVersion).toContain("extraction")
     expect(runs[0]?.modelId).toBeTruthy()
+  })
+})
+
+describe("regression: a re-wording does not move a memory between categories", () => {
+  it("keeps the original type when a refinement is applied", async () => {
+    // The bug this pins, found by running `pnpm demo` and reading its output:
+    // the same fact re-worded re-extracts under a different type — the mock reads
+    // "我最近开始系统学习 Effect-TS" as a goal and "我最近在系统学习 Effect-TS"
+    // as a fact — and the refinement inherited the CANDIDATE's type. So repeating
+    // yourself silently converted the user's goal into a fact, which changes both
+    // the context group it appears under and the write policy that applies to it
+    // (`decision` needs confirmation, `fact` does not).
+    const first = await rt.palace.remember({
+      userId: USER,
+      content: "我最近开始系统学习 Effect-TS。",
+      sourceKind: "user",
+    })
+    expect(first.memories.map((m) => m.type)).toContain("goal")
+
+    await rt.palace.remember({
+      userId: USER,
+      content: "我最近在系统学习 Effect-TS。",
+      sourceKind: "user",
+    })
+
+    const active = (await rt.storage.store.listMemories(USER, { statuses: ["active"] })).filter(
+      (m) => m.content.includes("Effect-TS"),
+    )
+
+    // Still exactly one current version of the fact...
+    expect(active).toHaveLength(1)
+    // ...and it is still the goal the user stated, not whatever the second
+    // reading of it happened to be labelled.
+    expect(active[0]?.type).toBe("goal")
   })
 })
 
@@ -339,6 +387,48 @@ describe("idempotency", () => {
     expect(after).toBeLessThanOrEqual(before + 1)
     const memories = await rt.storage.store.listMemories(USER, {})
     expect(memories.some((m) => m.reinforcedCount > 0 || m.status === "active")).toBe(true)
+  })
+})
+
+describe("regression: a repeat observation is deduplicated but still writable", () => {
+  it("writes a memory version that references the observation which actually exists", async () => {
+    // The bug this pins, found by running `pnpm demo` twice in a row: the second
+    // run's first statement is a repeat, so `insertObservation` deduplicated it —
+    // and then the pipeline adjudicated the candidate REFINE against the neighbour
+    // that the first run had already refined, inserted a memory version whose
+    // `origin_observation_id` was the id of the row that was never created, and
+    // died on the foreign key. The whole write was lost.
+    //
+    // Whether the repeat is DUPLICATE (an update, which hid the bug) or REFINE (an
+    // insert, which exposes it) depends on how the new text overlaps the *current*
+    // neighbour — so the sequence below is what makes it deterministic.
+    const content = "我最近开始系统学习 Effect-TS。"
+
+    const first = await rt.palace.remember({ userId: USER, content, sourceKind: "user" })
+    expect(first.memories.length).toBeGreaterThan(0)
+
+    // Refine the fact, so the active neighbour's wording no longer matches the
+    // candidate exactly: 0.5 <= overlap < 0.8 is REFINE, 1.0 would be DUPLICATE.
+    await rt.palace.remember({
+      userId: USER,
+      content: "我最近在系统学习 Effect-TS。",
+      sourceKind: "user",
+    })
+
+    // Same text as the first call: deduplicated at the observation level, and
+    // adjudicated against the refined neighbour.
+    const repeat = await rt.palace.remember({ userId: USER, content, sourceKind: "user" })
+
+    expect(await rt.storage.store.countObservations(USER)).toBe(2)
+    // The memory it wrote points at an observation that exists — the foreign key
+    // would have rejected anything else, but only after losing the transaction.
+    const written = await rt.storage.store.listMemories(USER, {})
+    expect(written.length).toBeGreaterThan(0)
+    for (const m of written) {
+      expect(await rt.storage.store.getObservation(USER, m.originObservationId!)).not.toBeNull()
+    }
+    // And the repeat resolves to the observation that already held this text.
+    expect(repeat.observationId).toBe(first.observationId)
   })
 })
 
@@ -595,6 +685,7 @@ describe("smart path: rescued paraphrases below the semantic floor", () => {
   let confirmed: TestRuntime
   let refused: TestRuntime
   let failing: TestRuntime
+  let lukewarm: TestRuntime
 
   beforeAll(async () => {
     const dim = await schemaEmbeddingDim()
@@ -616,10 +707,19 @@ describe("smart path: rescued paraphrases below the semantic floor", () => {
       llm: new StubRerankLlm("fail"),
       embeddings: new BandEmbedding(dim),
     })
+    // 0.45 sits between the veto (0.3) and the rescue bar (0.6): "not great, not
+    // useless". That is the band where nothing but the route's own evidence can
+    // decide.
+    lukewarm = await createTestRuntime({
+      userId: "rescue-lukewarm",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm(0.45),
+      embeddings: new BandEmbedding(dim),
+    })
   })
 
   afterAll(async () => {
-    await Promise.all([confirmed, refused, failing].map((r) => r.cleanup()))
+    await Promise.all([confirmed, refused, failing, lukewarm].map((r) => r.cleanup()))
   })
 
   it("recalls a below-floor candidate once the reranker confirms it", async () => {
@@ -667,15 +767,16 @@ describe("smart path: rescued paraphrases below the semantic floor", () => {
     expect(result.memories).toHaveLength(0)
   })
 
-  it("leaves a memory another route matched alone, even with a refusing reranker", async () => {
+  it("leaves a memory another route matched alone, even with a lukewarm reranker", async () => {
     // The rescue may only ADD candidates. This memory is in the semantic probe
     // band but also matched the lexical route, so the fast path would have
-    // recalled it — demanding rerank confirmation here would make the smart
-    // path recall strictly less than the fast path.
-    await seedWithEmbedding(refused, [{ type: "fact", content: "用户的项目代号是 Phoenix" }])
+    // recalled it — demanding rerank CONFIRMATION here would make the smart path
+    // recall strictly less than the fast path. A merely lukewarm relevance is
+    // not a refusal either (that is what the veto is for, at 0.3).
+    await seedWithEmbedding(lukewarm, [{ type: "fact", content: "用户的项目代号是 Phoenix" }])
 
-    const audit = await refused.palace.recallWithAudit({
-      userId: refused.userId,
+    const audit = await lukewarm.palace.recallWithAudit({
+      userId: lukewarm.userId,
       query: "Phoenix 项目代号是什么？",
       mode: "smart",
     })
@@ -698,6 +799,237 @@ describe("smart path: rescued paraphrases below the semantic floor", () => {
     // candidates through either: the answer is the one the floor would give.
     expect(result.memories).toHaveLength(0)
     expect(result.diagnostics.returnedEmpty).toBe(true)
+  })
+})
+
+describe("smart path: the reranker's 'not useful' verdict is binding", () => {
+  // A floor of 0.1 leaves the candidate well ABOVE it, so the rescue plays no
+  // part: the score is genuinely high and the only question is whether an
+  // explicit relevance judgement overrides it.
+  //
+  // `minRerankRelevance` is stated rather than inherited: under the mock LLM
+  // provider the default is 0, because the stand-in cannot judge relevance. A
+  // test that wants the veto has to say so.
+  const FLOOR_CONFIG = {
+    recall: { minSemanticSimilarity: 0.1, semanticRescueMargin: 0.05, minRerankRelevance: 0.3 },
+  }
+  const MEMORY = {
+    type: "preference" as const,
+    content: "用户偏好先看整体骨架再看实现细节",
+  }
+  const QUERY = "讲解时应该怎么安排顺序？"
+
+  let vetoing: TestRuntime
+  let broken: TestRuntime
+
+  beforeAll(async () => {
+    const dim = await schemaEmbeddingDim()
+    vetoing = await createTestRuntime({
+      userId: "veto",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm(0.1),
+      embeddings: new BandEmbedding(dim),
+    })
+    broken = await createTestRuntime({
+      userId: "veto-broken",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm("fail"),
+      embeddings: new BandEmbedding(dim),
+    })
+  })
+
+  afterAll(async () => {
+    await Promise.all([vetoing, broken].map((r) => r.cleanup()))
+  })
+
+  it("drops a high-scoring candidate the reranker calls irrelevant", async () => {
+    await seedWithEmbedding(vetoing, [MEMORY])
+
+    const audit = await vetoing.palace.recallWithAudit({
+      userId: vetoing.userId,
+      query: QUERY,
+      mode: "smart",
+    })
+
+    // This is the measured failure the veto exists for: on the real stack an
+    // irrelevant candidate reached a blended score of 0.56 while the model had
+    // already scored its relevance 0.05.
+    expect(audit.result.memories).toHaveLength(0)
+    expect(audit.result.diagnostics.returnedEmpty).toBe(true)
+    expect(audit.considered.find((e) => !e.kept)?.reason).toBe("rerank_rejected")
+  })
+
+  it("keeps the same memory on the fast path, which has no reranker to ask", async () => {
+    await seedWithEmbedding(vetoing, [MEMORY])
+
+    const result = await vetoing.palace.recall({
+      userId: vetoing.userId,
+      query: QUERY,
+      mode: "fast",
+    })
+
+    expect(result.memories.map((m) => m.memory.content)).toContain(MEMORY.content)
+  })
+
+  it("does not veto on the reranker's silence", async () => {
+    // A provider outage must not be mistaken for a relevance judgement: with no
+    // verdict to honour, the pipeline falls back to the score it has.
+    await seedWithEmbedding(broken, [MEMORY])
+
+    const result = await broken.palace.recall({
+      userId: broken.userId,
+      query: QUERY,
+      mode: "smart",
+    })
+
+    expect(result.memories.map((m) => m.memory.content)).toContain(MEMORY.content)
+  })
+})
+
+describe("auto escalates when the fast answer is uncorroborated", () => {
+  // Floor 0.3, so the candidate below is a legitimate semantic hit and the
+  // reason to escalate is not "the score was low" but "nothing corroborates it".
+  // The trust thresholds are stated explicitly: under the mock provider both
+  // default to 0, since a stand-in's relevance verdict has no standing.
+  const CONFIG = {
+    recall: {
+      minSemanticSimilarity: 0.3,
+      semanticRescueMargin: 0.05,
+      minRerankRelevance: 0.3,
+      escalateBelowSemanticSimilarity: 0.6,
+    },
+  }
+  // Cosine 0.447 and no lexical match: the fast path has nothing but a middling
+  // cosine to go on, which is exactly what a reranker can settle.
+  const WEAK = { type: "preference" as const, content: "用户偏好先看低相似摘要" }
+
+  let escalating: TestRuntime
+  let permissive: TestRuntime
+
+  beforeAll(async () => {
+    const dim = await schemaEmbeddingDim()
+    // A reranker that vetoes everything, so escalation has a visible effect.
+    escalating = await createTestRuntime({
+      userId: "auto-escalating",
+      config: CONFIG,
+      llm: new StubRerankLlm(0.1),
+      embeddings: new BandEmbedding(dim),
+    })
+    permissive = await createTestRuntime({
+      userId: "auto-permissive",
+      config: {
+        recall: { ...CONFIG.recall, escalateBelowSemanticSimilarity: 0 },
+      },
+      llm: new StubRerankLlm(0.1),
+      embeddings: new BandEmbedding(dim),
+    })
+  })
+
+  afterAll(async () => {
+    await Promise.all([escalating, permissive].map((r) => r.cleanup()))
+  })
+
+  it("escalates a semantic-only answer and lets the reranker decide", async () => {
+    await seedWithEmbedding(escalating, [WEAK])
+
+    const result = await escalating.palace.recall({
+      userId: escalating.userId,
+      query: "讲解时应该怎么安排顺序？",
+    })
+
+    // No mode was passed: this is what an agent gets by default.
+    expect(result.mode).toBe("smart")
+    expect(result.escalated).toBe(true)
+    // The reranker said "not useful", so the answer is nothing.
+    expect(result.memories).toHaveLength(0)
+  })
+
+  it("does not escalate the same answer when the rule is disabled", async () => {
+    await seedWithEmbedding(permissive, [WEAK])
+
+    const result = await permissive.palace.recall({
+      userId: permissive.userId,
+      query: "讲解时应该怎么安排顺序？",
+    })
+
+    // The old behaviour, kept measurable: the fast path answers on the score.
+    expect(result.mode).toBe("fast")
+    expect(result.escalated).toBe(false)
+    expect(result.memories.map((m) => m.memory.content)).toContain(WEAK.content)
+  })
+
+  it("leaves a corroborated answer on the fast path", async () => {
+    // A lexical match is evidence the cosine does not have. Escalating it would
+    // spend two model calls to learn nothing.
+    await seedWithEmbedding(escalating, [{ type: "fact", content: "用户的项目代号是 Phoenix" }])
+
+    const result = await escalating.palace.recall({
+      userId: escalating.userId,
+      query: "Phoenix 项目代号是什么？",
+    })
+
+    expect(result.mode).toBe("fast")
+    expect(result.escalated).toBe(false)
+  })
+})
+
+describe("a history question is not clamped to now", () => {
+  // Same physical store as the rest of the file (mock embedder, real database):
+  // the point under test is the temporal filter, and both versions match the
+  // lexical route, so neither depends on embedding quality.
+  const QUERY = "用户之前用什么框架？"
+  const VUE = {
+    type: "fact" as const,
+    content: "用户使用 Vue 框架",
+    status: "superseded" as const,
+    validUntil: "2026-06-01T00:00:00.000Z",
+  }
+  const REACT = {
+    type: "fact" as const,
+    content: "用户改用 React 框架",
+    validFrom: "2026-06-01T00:00:00.000Z",
+  }
+
+  it("returns the version that was true then when history is asked for", async () => {
+    await seedWithEmbedding(rt, [VUE, REACT])
+
+    const result = await rt.palace.recall({
+      userId: USER,
+      query: QUERY,
+      mode: "fast",
+      includeHistory: true,
+    })
+
+    // The regression: `includeHistory` alone used to be useless, because the
+    // validity window was still clamped to now and a superseded memory's
+    // valid_until is in the past by definition.
+    expect(result.memories.map((m) => m.memory.content)).toContain(VUE.content)
+  })
+
+  it("still hides it when history was not asked for", async () => {
+    await seedWithEmbedding(rt, [VUE, REACT])
+
+    const result = await rt.palace.recall({ userId: USER, query: QUERY, mode: "fast" })
+
+    const contents = result.memories.map((m) => m.memory.content)
+    expect(contents).toContain(REACT.content)
+    expect(contents).not.toContain(VUE.content)
+  })
+
+  it("still honours an explicit asOf", async () => {
+    await seedWithEmbedding(rt, [VUE, REACT])
+
+    const result = await rt.palace.recall({
+      userId: USER,
+      query: QUERY,
+      mode: "fast",
+      includeHistory: true,
+      asOf: "2026-03-01T00:00:00.000Z",
+    })
+
+    const contents = result.memories.map((m) => m.memory.content)
+    expect(contents).toContain(VUE.content)
+    expect(contents).not.toContain(REACT.content)
   })
 })
 

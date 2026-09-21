@@ -9,9 +9,10 @@
   },
   "packageManager": "pnpm@11.25.0",
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && tsc -p tsconfig.tools.json",
     "build:clean": "tsc --build --clean",
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --build && tsc -p tsconfig.tools.json",
+    "typecheck:tools": "tsc -p tsconfig.tools.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "eval": "tsx evals/run.ts",

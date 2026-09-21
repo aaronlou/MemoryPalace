@@ -35,6 +35,10 @@ export interface MemoryPalaceDeps {
   semanticRescueMargin?: number
   /** Rerank relevance a below-floor (rescued) candidate needs to survive. */
   rescueMinRelevance?: number
+  /** Rerank relevance below which the smart path vetoes a candidate. 0 disables. */
+  minRerankRelevance?: number
+  /** `auto` escalates on an uncorroborated semantic hit below this. 0 disables. */
+  escalateBelowSemanticSimilarity?: number
 }
 
 /**
@@ -85,7 +89,7 @@ export class MemoryPalace {
     }
 
     const now = this.clock.now().toISOString()
-    const observation: Observation = {
+    const proposed: Observation = {
       id: newId("obs"),
       userId: input.userId,
       content,
@@ -97,7 +101,12 @@ export class MemoryPalace {
       metadata: input.metadata,
     }
 
-    await this.store.insertObservation(observation)
+    // The row that actually holds this content. Observations are deduplicated by
+    // content hash, so a repeat resolves to the observation that already existed
+    // — and everything downstream must use THAT row, because memories reference
+    // their origin observation by id. Using the id we proposed instead wrote a
+    // foreign key to a row that was never created.
+    const observation = await this.store.insertObservation(proposed)
 
     const plan = await this.formation.plan(observation)
     const outcome = await applyFormationPlan(

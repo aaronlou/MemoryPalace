@@ -411,11 +411,11 @@ export class FormationPipeline {
 
     const makeMemory = (
       content: string,
-      opts: { validFrom?: string; summary?: string } = {},
+      opts: { type?: MemoryType; validFrom?: string; summary?: string } = {},
     ): Memory => ({
       id: newId("mem"),
       userId: observation.userId,
-      type: candidate.type,
+      type: opts.type ?? candidate.type,
       content,
       summary: opts.summary ?? candidate.summary,
       confidence: candidate.confidence,
@@ -465,9 +465,29 @@ export class FormationPipeline {
         }
         // A refinement describes the same fact over the same period, so it
         // inherits the original's validity start rather than resetting it.
+        //
+        // It inherits the TYPE too, and that is not cosmetic. A type is a guess
+        // made while reading one particular phrasing, so re-reading the same fact
+        // with different words can type it differently — measured: "我最近开始
+        // 系统学习 Effect-TS" extracts as `goal` while "我最近在系统学习
+        // Effect-TS" extracts as `fact`, and the demo's own repeat step used to
+        // flip a user's goal into a fact. The type decides which group a memory
+        // appears under in assembled context *and* which write policy applies to
+        // it (`decision` needs confirmation, `fact` does not), so letting it drift
+        // on a re-wording moves a memory between categories without anything about
+        // the user changing. ADR-0004's lesson cuts this way: the type describes
+        // how the statement was phrased, so a RE-phrasing must not move it.
+        //
+        // SUPERSEDE is the opposite case and keeps the candidate's type: a change
+        // of state can legitimately change the category ("I use Vue" is a fact,
+        // "I switched to React" is a decision).
         return {
           kind: "refine",
-          memory: makeMemory(merged, { validFrom: original.validFrom, summary: original.summary }),
+          memory: makeMemory(merged, {
+            type: original.type,
+            validFrom: original.validFrom,
+            summary: original.summary,
+          }),
           targetId: original.id,
           entityIds,
           reason: decision.reason,

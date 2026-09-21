@@ -191,10 +191,53 @@ export const RECALL_DEFAULTS = {
    * unlike an above-floor hit it has no independent evidence going for it.
    */
   rescueMinRelevance: 0.6,
+  /**
+   * Rerank relevance below which the SMART path vetoes a candidate outright.
+   *
+   * Measured on the real stack (bge-m3 + deepseek-reasoner): the reranker is
+   * good at this and the score is not. Two irrelevant pairs scored 0.502 and
+   * 0.553 cosine with a rerank relevance of 0.050 — the model said "not useful"
+   * and was right — yet both still cleared `minScore` at 0.56, because a lone
+   * semantic hit normalises to an RRF of 1.0 and that term alone (0.45) plus the
+   * priors outweighs a near-zero relevance term.
+   *
+   * So on the smart path a "not useful here" verdict is binding rather than a
+   * deduction. 0.3 is the boundary the rerank rubric already draws between
+   * "not useful here" (0.0-0.29) and "tangentially related" (0.3-0.59).
+   *
+   * This is deliberately a veto, not a re-weighting: the score's problem is that
+   * it is dominated by structure (rank, importance, recency) rather than
+   * relevance, and re-weighting cannot fix a term whose range depends on how
+   * many candidates a query happened to return.
+   *
+   * If reranking fails, no veto is applied — the pipeline falls back to the
+   * score, as it does for the rescue.
+   */
+  minRerankRelevance: 0.3,
   /** RRF smoothing constant. 60 is the value from the original paper. */
   rrfK: 60,
   /** `auto` escalates to the smart path when the fast path is this weak. */
   escalateBelowScore: 0.42,
+  /**
+   * `auto` also escalates when the fast path's best answer rests on cosine
+   * alone and that cosine is below this.
+   *
+   * The blended score cannot express "low confidence": it is dominated by RRF,
+   * importance and recency, so a single uncorroborated semantic hit scores well
+   * by construction. Measured on bge-m3: two irrelevant pairs reached 0.502 and
+   * 0.553 cosine with no lexical or entity match, scored ~0.78 on the fast path,
+   * and were returned as answers. Their similarity is in the same band as the
+   * relevant ones (0.523, 0.560), so no absolute floor separates them — but the
+   * *absence of corroboration* does say the answer is unresolved, and the smart
+   * path is the only way to resolve it.
+   *
+   * A corroborated hit (lexical or entity) is left alone: it has evidence the
+   * cosine does not, and escalating it would trade the fast path's whole point —
+   * latency — for nothing. So is a semantic-only hit above this value.
+   *
+   * 0 disables the rule.
+   */
+  escalateBelowSemanticSimilarity: 0.6,
 } as const
 
 export const EMBEDDING_TEXT_SEPARATOR = "\n"

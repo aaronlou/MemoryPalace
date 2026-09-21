@@ -22,6 +22,22 @@ function heading(text: string): void {
   console.log(`\n${"─".repeat(72)}\n${text}\n${"─".repeat(72)}`)
 }
 
+/**
+ * The walkthrough makes claims ("empty = correct", "should stay 1"). Printing
+ * them without checking them let a real defect hide in plain sight for as long as
+ * nobody read the output: step 6 printed `0 (should stay 1)` and looked like part
+ * of the demo. A claim printed is documentation; a claim checked is a smoke test,
+ * and this is the one command every new user runs first.
+ */
+const failures: string[] = []
+let checks = 0
+
+function check(label: string, ok: boolean): void {
+  checks += 1
+  console.log(`  ${ok ? "ok  " : "FAIL"} ${label}`)
+  if (!ok) failures.push(label)
+}
+
 async function main(): Promise<void> {
   if (reset) {
     await wipeUser(rt.storage.db, USER)
@@ -67,6 +83,11 @@ async function main(): Promise<void> {
   console.log("\n  ---- context handed to the model ----")
   for (const line of recall.context.split("\n")) console.log(`  ${line}`)
 
+  check(
+    "the agent is given what the user said about Effect-TS",
+    recall.memories.some((m) => m.memory.content.includes("Effect-TS")),
+  )
+
   // ---- 3. a change of state, which must supersede rather than overwrite ----
   heading("3. The user's situation changes")
 
@@ -92,6 +113,17 @@ async function main(): Promise<void> {
     console.log(`     ${r.kind} — ${r.reason}`)
   }
 
+  // Asserted on the resulting STATE rather than on this call's relations: re-running
+  // the demo without --reset re-states the same change, which is correctly judged
+  // "already known" and writes no new relation. The supersede either happened now
+  // or happened last time, and in both cases this is what the store looks like.
+  const aboutFramework = await rt.palace.listMemories(USER, {}, { limit: 100 })
+  check(
+    "the change superseded the earlier state rather than overwriting it",
+    aboutFramework.some((m) => m.content.includes("一直在用 Vue") && m.status === "superseded") &&
+      aboutFramework.some((m) => m.content.includes("React") && m.status === "active"),
+  )
+
   // ---- 4. both temporal questions the design doc asks ---------------------
   heading("4. Both temporal questions stay answerable")
 
@@ -106,6 +138,11 @@ async function main(): Promise<void> {
   })
   console.log("  Q: 你现在用 Vue 还是 React？")
   for (const m of now.memories) console.log(`     -> ${m.memory.content}`)
+  check(
+    "the current question returns the current state",
+    now.memories.some((m) => m.memory.content.includes("React")) &&
+      now.memories.every((m) => m.memory.status === "active"),
+  )
 
   // Ask what was true six months ago — a different question from "now", and the
   // one a single-timeline store cannot answer.
@@ -123,40 +160,57 @@ async function main(): Promise<void> {
       `     -> ${m.memory.content}  [${m.memory.status}] valid ${m.memory.validFrom?.slice(0, 10)} → ${m.memory.validUntil?.slice(0, 10) ?? "now"}`,
     )
   }
+  check(
+    "the same store answers what was true then",
+    past.memories.some((m) => m.memory.content.includes("Vue")),
+  )
 
   // ---- 5. the history of the change itself -------------------------------
   heading("5. 'Why did it change?' — the evolution chain")
 
   const all = await rt.palace.listMemories(USER, {}, { limit: 100 })
-  const superseded = all.find((m) => m.status === "superseded" && m.content.includes("Vue"))
-  if (superseded) {
-    const chain = await rt.palace.getHistory(USER, superseded.id)
-    const current = all.find(
-      (m) => m.status === "active" && m.content.toLowerCase().includes("react"),
+  const current = all.find(
+    (m) => m.status === "active" && m.content.toLowerCase().includes("react"),
+  )
+  const historyRows = current ? await rt.palace.getHistory(USER, current.id) : []
+  for (const m of historyRows) {
+    console.log(
+      `  ${m.status.padEnd(10)} ${m.content}   valid ${m.validFrom?.slice(0, 10)} → ${m.validUntil?.slice(0, 10) ?? "now"}`,
     )
-    if (current) {
-      const full = await rt.palace.getHistory(USER, current.id)
-      for (const m of full) {
-        console.log(
-          `  ${m.status.padEnd(10)} ${m.content}   valid ${m.validFrom?.slice(0, 10)} → ${m.validUntil?.slice(0, 10) ?? "now"}`,
-        )
-      }
-    } else {
-      console.log(`  (chain from superseded row: ${chain.length} entries)`)
-    }
   }
+  check(
+    "the chain shows what is true now and what it replaced",
+    historyRows.some((m) => m.status === "active") &&
+      historyRows.some((m) => m.status === "superseded"),
+  )
 
   // ---- 6. deduplication ---------------------------------------------------
   heading("6. Repeating yourself does not create a second memory")
 
   const repeat = "我最近在系统学习 Effect-TS。"
   console.log(`  "${repeat}"`)
+
+  // Count CURRENT versions of the fact, whatever type the extractor happens to
+  // give it. An earlier version of this check filtered on `goal` and printed
+  // `0 (should stay 1)`: it was reading the type, not the fact, and hiding a real
+  // defect — the re-wording re-typed the memory, so the user's goal quietly became
+  // a fact. The check has to be about what the user would recognise.
+  const currentVersionsOfTheFact = async (): Promise<number> =>
+    (await rt.palace.listMemories(USER, { statuses: ["active"] }, { limit: 100 })).filter((m) =>
+      m.content.includes("Effect-TS"),
+    ).length
+
+  const versionsBefore = await currentVersionsOfTheFact()
   const out6 = await rt.palace.remember({ userId: USER, content: repeat, sourceKind: "user" })
-  console.log(`  -> ${out6.candidateCount} candidate(s), ${out6.memories.length} new memory(ies)`)
-  const goalCount = (
-    await rt.palace.listMemories(USER, { types: ["goal"], statuses: ["active"] }, { limit: 50 })
-  ).filter((m) => m.content.includes("Effect-TS")).length
-  console.log(`  -> active Effect-TS goal memories: ${goalCount} (should stay 1)`)
+  const versionsAfter = await currentVersionsOfTheFact()
+
+  console.log(`  -> ${out6.candidateCount} candidate(s), ${out6.memories.length} new version(s)`)
+  for (const r of out6.relations) console.log(`     ${r.kind} — ${r.reason}`)
+  console.log(`  -> current versions of that fact: ${versionsBefore} -> ${versionsAfter}`)
+  check(
+    "repeating yourself does not leave two current versions",
+    versionsAfter === versionsBefore && versionsAfter === 1,
+  )
 
   // ---- 7. negative case ---------------------------------------------------
   heading("7. An unrelated question returns nothing, on purpose")
@@ -167,10 +221,20 @@ async function main(): Promise<void> {
     mode: "fast",
   })
   console.log(`  -> returned ${unrelated.memories.length} memories (empty = correct)`)
+  check("an unrelated question returns nothing", unrelated.memories.length === 0)
 
   heading("8. Stats")
   const stats = await rt.palace.stats(USER)
   for (const [k, v] of Object.entries(stats)) console.log(`  ${k.padEnd(14)} ${v}`)
+
+  heading("Result")
+  if (failures.length === 0) {
+    console.log(`  all ${checks} checks passed`)
+  } else {
+    console.log(`  ${failures.length} of ${checks} checks FAILED:`)
+    for (const f of failures) console.log(`    - ${f}`)
+    process.exitCode = 1
+  }
 }
 
 main()

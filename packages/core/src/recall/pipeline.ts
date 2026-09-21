@@ -34,6 +34,10 @@ export interface RecallDeps {
   semanticRescueMargin?: number
   /** Rerank relevance a below-floor (rescued) candidate needs to survive. */
   rescueMinRelevance?: number
+  /** Rerank relevance below which the smart path vetoes a candidate. 0 disables. */
+  minRerankRelevance?: number
+  /** `auto` escalates on an uncorroborated semantic hit below this. 0 disables. */
+  escalateBelowSemanticSimilarity?: number
 }
 
 export interface RecallAuditEntry {
@@ -68,6 +72,8 @@ export class RecallPipeline {
   private readonly minScore: number
   private readonly semanticRescueMargin: number
   private readonly rescueMinRelevance: number
+  private readonly minRerankRelevance: number
+  private readonly escalateBelowSemanticSimilarity: number
 
   constructor(deps: RecallDeps) {
     this.store = deps.store
@@ -80,6 +86,9 @@ export class RecallPipeline {
     this.minScore = deps.minScore ?? RECALL_DEFAULTS.minScore
     this.semanticRescueMargin = deps.semanticRescueMargin ?? RECALL_DEFAULTS.semanticRescueMargin
     this.rescueMinRelevance = deps.rescueMinRelevance ?? RECALL_DEFAULTS.rescueMinRelevance
+    this.minRerankRelevance = deps.minRerankRelevance ?? RECALL_DEFAULTS.minRerankRelevance
+    this.escalateBelowSemanticSimilarity =
+      deps.escalateBelowSemanticSimilarity ?? RECALL_DEFAULTS.escalateBelowSemanticSimilarity
   }
 
   async recall(query: RecallQuery): Promise<RecallResult> {
@@ -95,14 +104,33 @@ export class RecallPipeline {
     const fast = await this.runFast(query)
     if (mode === "fast") return fast
 
-    // auto: escalate only when the fast path came back weak. Returning nothing
-    // is itself a reason to escalate — the answer may be phrased differently
-    // from how the memory was stored.
-    const top = fast.result.memories[0]?.score ?? 0
-    if (fast.result.memories.length > 0 && top >= RECALL_DEFAULTS.escalateBelowScore) {
-      return fast
-    }
+    // auto: escalate when the fast path came back weak, and when it came back
+    // with an answer nothing corroborates. Returning nothing is itself a reason
+    // to escalate — the answer may be phrased differently from how the memory
+    // was stored.
+    const top = fast.result.memories[0]
+    if (top !== undefined && !this.needsEscalation(top)) return fast
     return this.runSmart(query, true, fast.considered)
+  }
+
+  /**
+   * Whether the fast path's best answer is unresolved rather than merely early.
+   *
+   * Two independent reasons: the blended score is weak, or the answer rests on
+   * cosine alone below a value that would speak for itself. The second exists
+   * because the first cannot see the difference — a lone semantic hit collects
+   * the same RRF, importance and recency priors as a corroborated one, so it
+   * scores well while being exactly the case a reranker can settle.
+   */
+  private needsEscalation(top: ScoredMemory): boolean {
+    if (top.score < RECALL_DEFAULTS.escalateBelowScore) return true
+    if (this.escalateBelowSemanticSimilarity <= 0) return false
+
+    const corroborated = top.routes.some((r) => r.route === "lexical" || r.route === "entity")
+    if (corroborated) return false
+
+    const similarity = top.breakdown.semantic
+    return similarity !== undefined && similarity < this.escalateBelowSemanticSimilarity
   }
 
   // -------------------------------------------------------------------------
@@ -114,13 +142,17 @@ export class RecallPipeline {
   ): Promise<{ result: RecallResult; considered: RecallAuditEntry[] }> {
     const started = Date.now()
     const referenceTime = this.clock.now().toISOString()
-    const asOf = query.asOf ?? referenceTime
+    const includeHistory = query.includeHistory ?? false
+    // `includeHistory` is the caller asking for the whole story, so clamping the
+    // validity window to now contradicts the request: a superseded memory's
+    // valid_until is in the past by definition, so "what did I use before?"
+    // would return only what is still true. An explicit `asOf` still wins.
+    const asOf = query.asOf ?? (includeHistory ? undefined : referenceTime)
     // Only apply the transaction-time filter when the caller actually asked
     // "what did we believe THEN". Defaulting it to now would exclude every
     // superseded version, which silently breaks "what was true in 2026?" — the
     // single most important thing a versioned store is for.
     const believedAt = query.believedAt
-    const includeHistory = query.includeHistory ?? false
     const statuses = includeHistory ? (["active", "superseded"] as const) : (["active"] as const)
 
     const options = {
@@ -199,9 +231,13 @@ export class RecallPipeline {
     }
 
     const taskType = understanding?.taskType ?? query.taskType
-    const asOf = query.asOf ?? understanding?.timeRangeFrom ?? referenceTime
-    const believedAt = query.believedAt
     const includeHistory = (query.includeHistory ?? false) || understanding?.intent === "historical"
+    // Same rule as the fast path: a historical question is exactly the case
+    // where clamping the validity window to now hides the answer. An explicit
+    // `asOf`, or a time range the understanding step inferred, still wins.
+    const asOf =
+      query.asOf ?? understanding?.timeRangeFrom ?? (includeHistory ? undefined : referenceTime)
+    const believedAt = query.believedAt
     const statuses: MemoryStatus[] = includeHistory ? ["active", "superseded"] : ["active"]
 
     // Resolve entities named in the query, plus any the caller supplied.
@@ -290,7 +326,8 @@ export class RecallPipeline {
     query: RecallQuery
     started: number
     referenceTime: string
-    asOf: string
+    /** Undefined when the caller asked for history without bounding it in time. */
+    asOf?: string
     believedAt?: string
     includeHistory: boolean
     routes: Array<{ route: string; items: SearchHit[] }>
@@ -411,16 +448,32 @@ export class RecallPipeline {
     // entry that disagreed with the filter would be worse than no audit at all.
     const verdict = (s: ScoredMemory): { kept: boolean; reason: string } => {
       if (s.score < this.minScore) return { kept: false, reason: "below_min_score" }
+
+      // The more specific rule first, so the audit names the reason that
+      // actually decided: a rescued candidate is out because the rescue was not
+      // confirmed, not merely because the score was low.
+      const rerankRelevance = rerankScores?.get(s.memory.id)
+
       if (input.rescuedIds?.has(s.memory.id)) {
         // No above-floor evidence of its own, so cosine cannot speak for it —
         // only the reranker can. If reranking failed entirely, or the candidate
         // never made the shortlist, the safe answer is to drop it and behave
         // like the fast path would have.
-        const confirmed = (rerankScores?.get(s.memory.id) ?? 0) >= this.rescueMinRelevance
+        const confirmed = (rerankRelevance ?? 0) >= this.rescueMinRelevance
         return confirmed
           ? { kept: true, reason: "kept_rescued_confirmed" }
           : { kept: false, reason: "rescued_unconfirmed" }
       }
+
+      // An explicit "not useful here" from the model overrides a score that is
+      // mostly rank, importance and recency. Only applies when the reranker
+      // actually answered: if it failed there is no verdict to honour, and
+      // vetoing on its silence would let an outage masquerade as a relevance
+      // judgement.
+      if (rerankRelevance !== undefined && rerankRelevance < this.minRerankRelevance) {
+        return { kept: false, reason: "rerank_rejected" }
+      }
+
       return { kept: true, reason: "kept" }
     }
 

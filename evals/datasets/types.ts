@@ -59,6 +59,17 @@ export interface ExtractionCase {
 
 export type DecisionKind = "DUPLICATE" | "REFINE" | "SUPERSEDE" | "CONTRADICT" | "COEXIST" | "NEW"
 
+/**
+ * What the harness can actually observe.
+ *
+ * `UNKNOWN` is not a decision the model can take — it is what the harness infers
+ * when nothing was created, reinforced or related, i.e. the pipeline decided the
+ * input held nothing worth storing. It therefore belongs in the accepted set of a
+ * case whose real purpose is to prove that a passing mention does not supersede
+ * anything (see `acceptDecisions`).
+ */
+export type ObservedDecision = DecisionKind | "UNKNOWN"
+
 export interface EvolutionCase {
   id: string
   note: string
@@ -83,7 +94,7 @@ export interface EvolutionCase {
    * of the author's taste — and leaves cases with a single answer (like a true
    * change of state) strict.
    */
-  acceptDecisions?: DecisionKind[]
+  acceptDecisions?: ObservedDecision[]
   /** Content that must end up as a superseded/refined-away version. */
   expectSupersededContentContains?: string
   /** Content that must be active after the observation is processed. */

@@ -11,3 +11,5 @@ that were rejected, and what the decision costs.
 | [0004](./0004-one-adjudication-call.md) | Dedup and conflict detection are one model call |
 | [0005](./0005-qualifying-routes-and-similarity-floors.md) | Recall requires retrieval evidence; nothing is padded |
 | [0006](./0006-confirmed-rescue-below-the-semantic-floor.md) | A below-floor candidate is recalled only if the reranker confirms it |
+| [0007](./0007-the-rerankers-judgement-is-binding.md) | The reranker's "not useful" verdict is binding, when the reranker can be trusted |
+| [0008](./0008-history-is-not-clamped-to-now.md) | A history question is not clamped to now |

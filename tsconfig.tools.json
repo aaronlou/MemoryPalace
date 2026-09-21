@@ -1,0 +1,30 @@
+{
+  // The entry points that live outside the package graph: the CLI scripts a user
+  // runs (`pnpm demo`, `pnpm backup`, `pnpm embedding:*`) and the eval harness.
+  //
+  // They were previously covered by nothing. `pnpm test` transpiles them without
+  // typechecking, and the root build only references packages/ and apps/ — so a
+  // duplicate `const before` in the demo compiled fine and failed at runtime, in
+  // the first command the README tells a new user to run.
+  //
+  // No emit: these are not published artifacts, and a `build` that scattered .js
+  // files next to the sources would be worse than the gap it closes.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["scripts/**/*.ts", "evals/**/*.ts"],
+  "references": [
+    { "path": "./packages/shared" },
+    { "path": "./packages/core" },
+    { "path": "./packages/llm" },
+    { "path": "./packages/storage-pg" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/test-support" }
+  ]
+}

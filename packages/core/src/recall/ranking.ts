@@ -82,6 +82,7 @@ export function rankMemory(input: RankingInput): { score: number; breakdown: Sco
     recency,
     importance: clamp01(memory.importance),
     taskMatch,
+    rerank: input.rerankRelevance,
     rrf: normalizedRrf,
     final: clamp01(final),
   }

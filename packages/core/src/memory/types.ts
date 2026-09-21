@@ -270,6 +270,14 @@ export interface ScoreBreakdown {
   recency?: number
   taskMatch?: number
   conflictRisk?: number
+  /**
+   * LLM relevance judgement, smart path only.
+   *
+   * Present for the same reason as the rest of the breakdown: on the smart path
+   * this is the largest term after RRF, so a result that looks wrong cannot be
+   * diagnosed without it.
+   */
+  rerank?: number
   rrf: number
   final: number
 }

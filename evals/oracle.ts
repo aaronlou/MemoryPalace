@@ -3,8 +3,9 @@ import type {
   GenerateObjectRequest,
   GenerateObjectResult,
   LlmPort,
+  MemoryType,
 } from "@memory-palace/core"
-import type { DecisionKind, MemoryType } from "./datasets/index.js"
+import type { DecisionKind } from "./datasets/index.js"
 
 /**
  * An LLM that always returns the dataset's expected answer.

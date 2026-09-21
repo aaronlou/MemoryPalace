@@ -47,8 +47,11 @@ export interface EvalOptions {
   embedding?: "mock" | "real"
   /** Only run these case ids (substring match). */
   filter?: string
-  /** Skip the LLM rerank/understanding path to keep runs cheap. */
-  recallMode?: "fast" | "smart"
+  /**
+   * Which recall path to measure. `auto` is the default an agent gets when it
+   * passes no mode, so it has to be measurable rather than assumed.
+   */
+  recallMode?: "fast" | "smart" | "auto"
   label?: string
 }
 
@@ -110,7 +113,7 @@ export interface EvalReport {
    * candidates below the semantic floor when the reranker confirms them, so a
    * fast run and a smart run answer different questions.
    */
-  recallMode: "fast" | "smart"
+  recallMode: "fast" | "smart" | "auto"
   startedAt: string
   durationMs: number
   extraction: {
@@ -372,7 +375,7 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
         note: c.note,
         expected: c.expectDecision,
         actual,
-        correct: accepted.includes(actual as never),
+        correct: accepted.includes(actual),
         created: outcome.memories.map((m) => ({ type: m.type, content: m.content })),
         superseded: after.filter((m) => m.status === "superseded").map((m) => m.content),
       })

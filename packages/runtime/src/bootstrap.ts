@@ -77,6 +77,8 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     minScore: config.recall.minScore,
     semanticRescueMargin: config.recall.semanticRescueMargin,
     rescueMinRelevance: config.recall.rescueMinRelevance,
+    minRerankRelevance: config.recall.minRerankRelevance,
+    escalateBelowSemanticSimilarity: config.recall.escalateBelowSemanticSimilarity,
   })
 
   logger.info("runtime ready", {

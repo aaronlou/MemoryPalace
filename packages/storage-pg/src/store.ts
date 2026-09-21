@@ -73,12 +73,29 @@ export class PgMemoryStore implements MemoryStore {
   // Observations
   // -------------------------------------------------------------------------
 
-  async insertObservation(observation: Observation): Promise<void> {
-    await this.q(
+  /**
+   * Record an observation, deduplicated by content hash.
+   *
+   * Returns the row that now holds this content: the freshly inserted one, or the
+   * existing one when the same text was ingested before. That return value is the
+   * point, not a convenience. A memory references the observation it came from
+   * (`origin_observation_id`), so a caller that keeps using the id it *tried* to
+   * insert ends up writing a foreign key that points at a row which was never
+   * created — measured, by running `pnpm demo` twice in a row: the second run
+   * deduplicates the repeat text, the repeat is then adjudicated REFINE rather
+   * than DUPLICATE, and the insert fails the foreign key, losing the write.
+   *
+   * `DO UPDATE` rather than `DO NOTHING` only because RETURNING needs something to
+   * return on conflict; the assignment is a no-op, so the original record is
+   * untouched — a repeat is not new evidence about when the user said it.
+   */
+  async insertObservation(observation: Observation): Promise<Observation> {
+    const rows = await this.q<ObservationRow>(
       `INSERT INTO observations
          (id, user_id, content, content_hash, source_kind, agent_id, occurred_at, created_at, status, metadata)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (user_id, content_hash) DO NOTHING`,
+       ON CONFLICT (user_id, content_hash) DO UPDATE SET content = observations.content
+       RETURNING *`,
       [
         observation.id,
         observation.userId,
@@ -92,6 +109,13 @@ export class PgMemoryStore implements MemoryStore {
         observation.metadata ? JSON.stringify(observation.metadata) : null,
       ],
     )
+    const row = rows[0]
+    if (!row) {
+      // Unreachable with RETURNING, but a silent `undefined` here would produce a
+      // memory with no traceable origin, which is worse than a loud failure.
+      throw new Error("insertObservation inserted nothing and matched nothing")
+    }
+    return toObservation(row)
   }
 
   async getObservation(userId: string, id: string): Promise<Observation | null> {

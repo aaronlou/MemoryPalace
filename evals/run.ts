@@ -18,7 +18,7 @@ function arg(name: string, fallback?: string): string | undefined {
 
 const provider = (arg("provider", "mock") ?? "mock") as ProviderKind
 const filter = arg("filter")
-const recallMode = (arg("recall-mode", "fast") ?? "fast") as "fast" | "smart"
+const recallMode = (arg("recall-mode", "fast") ?? "fast") as "fast" | "smart" | "auto"
 const embedding = arg("embedding") as "mock" | "real" | undefined
 const repeat = Math.max(1, Number.parseInt(arg("repeat", "1") ?? "1", 10))
 

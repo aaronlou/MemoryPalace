@@ -42,7 +42,15 @@ export interface MemoryStore {
   transaction<T>(fn: (tx: MemoryStore) => Promise<T>): Promise<T>
 
   // --- observations --------------------------------------------------------
-  insertObservation(observation: Observation): Promise<void>
+  /**
+   * Store an observation, deduplicated by content, and return the row that holds
+   * it — the existing one when this content was ingested before.
+   *
+   * Callers MUST use the returned observation for anything downstream: memories
+   * reference their origin observation, and a repeat resolves to the row that
+   * already existed rather than the id the caller proposed.
+   */
+  insertObservation(observation: Observation): Promise<Observation>
   getObservation(userId: string, id: string): Promise<Observation | null>
   setObservationStatus(userId: string, id: string, status: ObservationStatus): Promise<void>
   listObservations(
