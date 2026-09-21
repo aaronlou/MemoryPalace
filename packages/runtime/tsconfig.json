@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["node"] },
+  "include": ["src"],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../core" },
+    { "path": "../llm" },
+    { "path": "../storage-pg" }
+  ]
+}

@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    container_name: memory-palace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mp
+      POSTGRES_PASSWORD: mp
+      POSTGRES_DB: memory_palace
+    ports:
+      - "5433:5432"
+    volumes:
+      - mp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mp -d memory_palace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  mp-pgdata:

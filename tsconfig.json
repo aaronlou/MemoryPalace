@@ -1,0 +1,32 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/llm"
+    },
+    {
+      "path": "./packages/storage-pg"
+    },
+    {
+      "path": "./packages/runtime"
+    },
+    {
+      "path": "./apps/api"
+    },
+    {
+      "path": "./apps/mcp"
+    },
+    {
+      "path": "./packages/test-support"
+    },
+    {
+      "path": "./packages/integration-tests"
+    }
+  ]
+}

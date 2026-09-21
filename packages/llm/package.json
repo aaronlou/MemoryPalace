@@ -1,0 +1,24 @@
+{
+  "name": "@memory-palace/llm",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.58",
+    "@ai-sdk/deepseek": "3.0.49",
+    "@ai-sdk/openai": "4.0.71",
+    "@memory-palace/core": "workspace:*",
+    "@memory-palace/shared": "workspace:*",
+    "ai": "7.0.107",
+    "zod": "4.6.5"
+  }
+}

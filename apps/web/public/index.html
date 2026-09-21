@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Memory Palace</title>
+    <meta
+      name="description"
+      content="Inspect, correct and export the long-term memory this system holds about you."
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563EB'/><path d='M9 22V10l7 8 7-8v12' stroke='white' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>"
+    />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="topbar">
+      <div class="topbar__brand">
+        <svg class="logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path
+            d="M4 19V5l8 9 8-9v14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <h1 class="wordmark">Memory Palace</h1>
+      </div>
+
+      <div class="topbar__actions">
+        <div class="stat-strip" id="stat-strip" aria-live="polite" aria-atomic="true"></div>
+        <button type="button" class="btn btn--ghost" id="theme-toggle" aria-label="Switch colour theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="icon">
+            <path
+              d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs" aria-label="Sections">
+      <button type="button" class="tab" data-view="memories" aria-current="page">
+        Memories <span class="count" id="count-memories"></span>
+      </button>
+      <button type="button" class="tab" data-view="pending">
+        Needs review <span class="count" id="count-pending"></span>
+      </button>
+      <button type="button" class="tab" data-view="timeline">Timeline</button>
+      <button type="button" class="tab" data-view="recall">Recall test</button>
+      <button type="button" class="tab" data-view="settings">Settings</button>
+    </nav>
+
+    <main id="main" tabindex="-1">
+      <!-- Memories -->
+      <section class="view" id="view-memories" aria-labelledby="h-memories">
+        <h2 class="sr-only" id="h-memories">Stored memories</h2>
+
+        <form class="toolbar" id="filter-form" role="search">
+          <div class="field field--grow">
+            <label for="search-q">Search</label>
+            <input
+              type="search"
+              id="search-q"
+              name="q"
+              placeholder="Search wording, e.g. Effect-TS"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="filter-type">Type</label>
+            <select id="filter-type" name="types">
+              <option value="">All types</option>
+              <option value="goal">Goal</option>
+              <option value="preference">Preference</option>
+              <option value="fact">Fact</option>
+              <option value="decision">Decision</option>
+              <option value="relationship">Relationship</option>
+              <option value="experience">Experience</option>
+              <option value="event">Event</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="filter-status">Status</label>
+            <select id="filter-status" name="statuses">
+              <option value="active">Active</option>
+              <option value="">Everything</option>
+              <option value="superseded">Superseded</option>
+              <option value="archived">Archived</option>
+              <option value="pending">Awaiting review</option>
+            </select>
+          </div>
+        </form>
+
+        <form class="composer" id="remember-form">
+          <div class="field field--grow">
+            <label for="remember-input">Tell it something worth remembering</label>
+            <textarea
+              id="remember-input"
+              name="content"
+              rows="2"
+              placeholder="Write it however you would say it — the system decides what is worth keeping."
+              required
+            ></textarea>
+            <p class="hint">
+              Stored verbatim first, then turned into memories. A model outage cannot lose this.
+            </p>
+          </div>
+          <button type="submit" class="btn btn--primary" id="remember-submit">Remember</button>
+        </form>
+
+        <div id="memories-list" class="list" aria-busy="false"></div>
+      </section>
+
+      <!-- Pending -->
+      <section class="view" id="view-pending" hidden aria-labelledby="h-pending">
+        <h2 id="h-pending">Needs review</h2>
+        <p class="lede">
+          These were not stored automatically — either they conflict with something already known,
+          or the agent that wrote them is not trusted for that kind of memory. Confirm only what
+          you agree with.
+        </p>
+        <div id="pending-list" class="list" aria-busy="false"></div>
+      </section>
+
+      <!-- Timeline -->
+      <section class="view" id="view-timeline" hidden aria-labelledby="h-timeline">
+        <h2 id="h-timeline">Timeline</h2>
+        <p class="lede">
+          When each memory was true, not when it was learned. Struck-through entries are no longer
+          current but are kept so changes stay traceable.
+        </p>
+        <div id="timeline-list" class="list" aria-busy="false"></div>
+      </section>
+
+      <!-- Recall test -->
+      <section class="view" id="view-recall" hidden aria-labelledby="h-recall">
+        <h2 id="h-recall">Recall test</h2>
+        <p class="lede">
+          Ask what an agent would ask, and see exactly what would be handed to it — including why
+          each memory was chosen and what was filtered out.
+        </p>
+        <form class="toolbar" id="recall-form">
+          <div class="field field--grow">
+            <label for="recall-q">Question an agent would ask</label>
+            <input type="search" id="recall-q" name="query" required placeholder="e.g. Effect-TS 的 Context.Service 怎么理解？" />
+          </div>
+          <div class="field">
+            <label for="recall-mode">Path</label>
+            <select id="recall-mode" name="mode">
+              <option value="auto">auto</option>
+              <option value="fast">fast (no model call)</option>
+              <option value="smart">smart (understands + reranks)</option>
+            </select>
+          </div>
+          <div class="field field--check">
+            <input type="checkbox" id="recall-history" name="includeHistory" />
+            <label for="recall-history">Include no-longer-true memories</label>
+          </div>
+          <button type="submit" class="btn btn--primary">Run recall</button>
+        </form>
+        <div id="recall-result" class="recall-result"></div>
+      </section>
+
+      <!-- Settings -->
+      <section class="view" id="view-settings" hidden aria-labelledby="h-settings">
+        <h2 id="h-settings">Settings and data</h2>
+
+        <div class="card">
+          <h3>Your data is yours</h3>
+          <p class="lede">
+            Export in a format you can read, or in one you can restore. Deleting is real deletion,
+            not a flag.
+          </p>
+          <div class="button-row">
+            <a class="btn" href="/api/export?format=markdown" download>Download readable (Markdown)</a>
+            <a class="btn" href="/api/export?format=json&embeddings=true" download>Download full backup (JSON)</a>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Restore from a backup</h3>
+          <p class="lede">
+            Replaces everything currently stored. The file must be a Memory Palace JSON export.
+          </p>
+          <div class="field">
+            <label for="import-file">Backup file</label>
+            <input type="file" id="import-file" accept="application/json,.json" />
+          </div>
+          <button type="button" class="btn btn--danger" id="import-btn" disabled>
+            Replace all data from this file
+          </button>
+        </div>
+
+        <div class="card">
+          <h3>Agent write permissions</h3>
+          <p class="lede">
+            Agents may record what you tell them, but a memory awaiting review is never presented
+            as fact.
+          </p>
+          <div id="policies-list"></div>
+        </div>
+
+        <div class="card card--danger">
+          <h3>Erase everything</h3>
+          <p class="lede">Permanently deletes every memory, observation and entity. This cannot be undone.</p>
+          <button type="button" class="btn btn--danger" id="erase-btn">Erase all data</button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Detail drawer -->
+    <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+    <aside
+      class="drawer"
+      id="drawer"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="drawer-title"
+    >
+      <header class="drawer__head">
+        <h2 id="drawer-title">Memory</h2>
+        <button type="button" class="btn btn--ghost" id="drawer-close" aria-label="Close details">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="icon">
+            <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+      </header>
+      <div class="drawer__body" id="drawer-body"></div>
+    </aside>
+
+    <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

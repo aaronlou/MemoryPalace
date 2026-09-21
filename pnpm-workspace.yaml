@@ -1,0 +1,8 @@
+packages:
+  - "packages/*"
+  - "apps/*"
+
+# pnpm 11 requires explicit consent for dependency build scripts.
+# esbuild needs its postinstall to place the correct platform binary; vitest uses it.
+allowBuilds:
+  esbuild: true

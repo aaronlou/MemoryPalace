@@ -1,0 +1,573 @@
+{
+  "label": "mock",
+  "provider": "mock",
+  "startedAt": "2026-09-21T10:48:16.228Z",
+  "durationMs": 537,
+  "extraction": {
+    "cases": [
+      {
+        "id": "ext-001",
+        "note": "The design doc's own example: one sentence, two distinct memories of different types.",
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "preference",
+            "content": "以后你给我讲 TypeScript 的时候，先从整体结构和设计思想讲，再深入 API"
+          },
+          {
+            "type": "goal",
+            "content": "用户开始系统学习 Effect-TS"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-002",
+        "note": "An explicit, durable preference about how help should be given.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 1,
+        "produced": [
+          {
+            "type": "preference",
+            "content": "用户希望你先给结论，再讲推导过程，不要一上来就贴大段代码"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-003",
+        "note": "Two independent facts in one sentence. The prompt says to split compound statements, so both are expected.",
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "precision": 0,
+        "recall": 0,
+        "f1": 0,
+        "violations": 0,
+        "produced": [],
+        "missed": [
+          {
+            "type": "fact",
+            "contentContains": ["M3 Max"],
+            "mustHave": true
+          },
+          {
+            "type": "fact",
+            "contentContains": ["Postgres"],
+            "mustHave": true
+          }
+        ]
+      },
+      {
+        "id": "ext-004",
+        "note": "A decision, including the reasoning behind it.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1,
+        "recall": 0.5,
+        "f1": 0.6666666666666666,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "decision",
+            "content": "用户决定后端用 TypeScript 而不是 Python，主要是为了避免双语言维护成本"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-005",
+        "note": "A change of state must be captured as a change, not as a new independent fact.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "fact",
+            "content": "用户已经不太写 Java 了，主要精力都放在 TypeScript 上"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-006",
+        "note": "A relationship between two entities rather than a property of the user.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "fact",
+            "content": "Memory Palace 这个项目用 PostgreSQL 加 pgvector 做存储"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-007",
+        "note": "A negative case: nothing durable here. A correct system stores nothing.",
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [],
+        "missed": []
+      },
+      {
+        "id": "ext-008",
+        "note": "A negative case: a transient state that will not matter next month.",
+        "tp": 0,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [],
+        "missed": []
+      },
+      {
+        "id": "ext-009",
+        "note": "A durable experience with lasting relevance.",
+        "tp": 0,
+        "fp": 0,
+        "fn": 2,
+        "precision": 0,
+        "recall": 0,
+        "f1": 0,
+        "violations": 0,
+        "produced": [],
+        "missed": [
+          {
+            "types": ["experience", "fact"],
+            "contentContains": ["支付"],
+            "mustHave": true
+          },
+          {
+            "contentContains": ["风控"],
+            "mustHave": true
+          }
+        ]
+      },
+      {
+        "id": "ext-010",
+        "note": "A long-term goal with a concrete subject.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "goal",
+            "content": "用户今年的目标是把手上的 Agent Harness 做成能每天用的东西"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-011",
+        "note": "An event anchored in time.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 0,
+        "precision": 1,
+        "recall": 1,
+        "f1": 1,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "goal",
+            "content": "2026 年 9 月 20 日我开始研究 Memory Palace 这个方向"
+          }
+        ],
+        "missed": []
+      },
+      {
+        "id": "ext-012",
+        "note": "Mixed input: one durable preference plus conversational filler.",
+        "tp": 1,
+        "fp": 0,
+        "fn": 1,
+        "precision": 1,
+        "recall": 0.5,
+        "f1": 0.6666666666666666,
+        "violations": 0,
+        "produced": [
+          {
+            "type": "preference",
+            "content": "不过我更希望文档先用图讲清楚数据流，再补细节"
+          }
+        ],
+        "missed": [
+          {
+            "contentContains": ["开会"],
+            "mustHave": false
+          }
+        ]
+      }
+    ],
+    "precision": 1,
+    "recall": 0.6,
+    "f1": 0.7499999999999999,
+    "totalViolations": 1
+  },
+  "evolution": {
+    "cases": [
+      {
+        "id": "evo-001",
+        "note": "Design doc Case 2: the situation changed, so the old memory is superseded.",
+        "expected": "SUPERSEDE",
+        "actual": "SUPERSEDE",
+        "correct": true,
+        "created": [
+          {
+            "type": "fact",
+            "content": "用户不用 Vue 了，改用 React"
+          }
+        ],
+        "superseded": ["用户使用 Vue"]
+      },
+      {
+        "id": "evo-002",
+        "note": "Design doc Case 1: the same fact restated with different wording is a duplicate.",
+        "expected": "DUPLICATE",
+        "actual": "NEW",
+        "correct": false,
+        "created": [
+          {
+            "type": "fact",
+            "content": "用户在系统学习 Effect-TS"
+          }
+        ],
+        "superseded": []
+      },
+      {
+        "id": "evo-003",
+        "note": "Same fact, materially more detail: refine rather than duplicate or replace.",
+        "expected": "REFINE",
+        "actual": "NEW",
+        "correct": false,
+        "created": [
+          {
+            "type": "preference",
+            "content": "对，我喜欢先理解整体架构和设计思想，再去看具体的 API 实现"
+          }
+        ],
+        "superseded": []
+      },
+      {
+        "id": "evo-004",
+        "note": "A genuinely new fact about an unfamiliar subject must not be forced into an existing memory.",
+        "expected": "NEW",
+        "actual": "UNKNOWN",
+        "correct": false,
+        "created": [],
+        "superseded": []
+      },
+      {
+        "id": "evo-005",
+        "note": "New detail about an existing preference refines it; it does not invalidate it.",
+        "expected": "REFINE",
+        "actual": "NEW",
+        "correct": false,
+        "created": [
+          {
+            "type": "fact",
+            "content": "用户主要写 TypeScript，Rust 只是业余看看"
+          }
+        ],
+        "superseded": []
+      },
+      {
+        "id": "evo-006",
+        "note": "An explicit negation of a previously stated preference.",
+        "expected": "SUPERSEDE",
+        "actual": "NEW",
+        "correct": false,
+        "created": [
+          {
+            "type": "preference",
+            "content": "用户其实不太喜欢大段代码了，更想看思路"
+          }
+        ],
+        "superseded": []
+      },
+      {
+        "id": "evo-007",
+        "note": "Not mentioning something again is not a supersede.",
+        "expected": "NEW",
+        "actual": "NEW",
+        "correct": true,
+        "created": [
+          {
+            "type": "event",
+            "content": "今天研究了一下 HNSW 索引的参数"
+          }
+        ],
+        "superseded": []
+      },
+      {
+        "id": "evo-008",
+        "note": "A restatement with a stronger commitment reinforces rather than creating a version.",
+        "expected": "DUPLICATE",
+        "actual": "SUPERSEDE",
+        "correct": false,
+        "created": [
+          {
+            "type": "fact",
+            "content": "确认一下，后端就是 TypeScript，不改了"
+          }
+        ],
+        "superseded": ["Agent Harness 的后端选 TypeScript"]
+      },
+      {
+        "id": "evo-009",
+        "note": "Two incompatible claims about the same period: neither may win silently.",
+        "expected": "CONTRADICT",
+        "actual": "UNKNOWN",
+        "correct": false,
+        "created": [],
+        "superseded": []
+      },
+      {
+        "id": "evo-010",
+        "note": "Returning to a previous state creates a THIRD version, not a revival of the first.",
+        "expected": "SUPERSEDE",
+        "actual": "SUPERSEDE",
+        "correct": true,
+        "created": [
+          {
+            "type": "fact",
+            "content": "用户又用回 React 了"
+          }
+        ],
+        "superseded": ["用户使用 React"]
+      }
+    ],
+    "accuracy": 0.3,
+    "confusion": {
+      "SUPERSEDE": {
+        "SUPERSEDE": 2,
+        "NEW": 1
+      },
+      "DUPLICATE": {
+        "NEW": 1,
+        "SUPERSEDE": 1
+      },
+      "REFINE": {
+        "NEW": 2
+      },
+      "NEW": {
+        "UNKNOWN": 1,
+        "NEW": 1
+      },
+      "CONTRADICT": {
+        "UNKNOWN": 1
+      }
+    }
+  },
+  "recall": {
+    "cases": [
+      {
+        "id": "rec-001",
+        "note": "A preference stated in different words must still be recalled.",
+        "precisionAtK": 0.5,
+        "recallAtK": 1,
+        "returnedCount": 2,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": [
+          "用户正在系统学习 Effect-TS",
+          "用户喜欢先理解整体结构和设计思想，再深入具体 API"
+        ]
+      },
+      {
+        "id": "rec-002",
+        "note": "The stated preference should surface for a request to explain something.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 1,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["用户喜欢先理解整体结构和设计思想，再深入具体 API"]
+      },
+      {
+        "id": "rec-003",
+        "note": "Asking about the present must not return a superseded memory.",
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "returnedCount": 0,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": true,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": []
+      },
+      {
+        "id": "rec-004",
+        "note": "Asking about the past must return what was true THEN.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 1,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["用户使用 Vue"]
+      },
+      {
+        "id": "rec-005",
+        "note": "A question with no connection to any memory must return nothing.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 0,
+        "expectedCount": 0,
+        "expectEmpty": true,
+        "wasEmpty": true,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": []
+      },
+      {
+        "id": "rec-006",
+        "note": "Knowing something about the user does not make it relevant to every question.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 0,
+        "expectedCount": 0,
+        "expectEmpty": true,
+        "wasEmpty": true,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": []
+      },
+      {
+        "id": "rec-007",
+        "note": "Two projects sharing a technology must not be conflated.",
+        "precisionAtK": 0.5,
+        "recallAtK": 1,
+        "returnedCount": 2,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["Memory Palace 使用 PostgreSQL 存储", "数据看板项目使用 MySQL 存储"]
+      },
+      {
+        "id": "rec-008",
+        "note": "A memory awaiting confirmation must not be presented as established fact.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 0,
+        "expectedCount": 0,
+        "expectEmpty": true,
+        "wasEmpty": true,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": []
+      },
+      {
+        "id": "rec-009",
+        "note": "A goal stated long ago must still be retrievable.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 1,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["用户的目标是把 Agent Harness 做成每天都能用的工具"]
+      },
+      {
+        "id": "rec-010",
+        "note": "Historical context requested explicitly must include the superseded version.",
+        "precisionAtK": 0,
+        "recallAtK": 0,
+        "returnedCount": 1,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["用户改用 React"]
+      },
+      {
+        "id": "rec-011",
+        "note": "An engineering preference must beat an unrelated event that is merely recent.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 1,
+        "expectedCount": 1,
+        "expectEmpty": false,
+        "wasEmpty": false,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": ["用户希望解释技术时先讲整体架构再看细节"]
+      },
+      {
+        "id": "rec-012",
+        "note": "An empty store must return nothing rather than erroring.",
+        "precisionAtK": 1,
+        "recallAtK": 1,
+        "returnedCount": 0,
+        "expectedCount": 0,
+        "expectEmpty": true,
+        "wasEmpty": true,
+        "negativeCorrect": true,
+        "forbiddenViolations": [],
+        "returned": []
+      }
+    ],
+    "precisionAtK": 0.75,
+    "recallAtK": 0.8333333333333334,
+    "negativeAccuracy": 1,
+    "forbiddenViolationRate": 0
+  },
+  "usage": {
+    "llmCalls": 30,
+    "inputTokens": 1644,
+    "outputTokens": 1514,
+    "costUsd": 0
+  },
+  "fingerprint": {
+    "extractionPrompt": "extraction-v1",
+    "adjudicationPrompt": "adjudication-v1",
+    "modelId": "mock-rule-based"
+  }
+}

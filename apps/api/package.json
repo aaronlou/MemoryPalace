@@ -1,0 +1,25 @@
+{
+  "name": "@memory-palace/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/main.js",
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@memory-palace/core": "workspace:*",
+    "@memory-palace/llm": "workspace:*",
+    "@memory-palace/shared": "workspace:*",
+    "@memory-palace/storage-pg": "workspace:*",
+    "@hono/node-server": "2.1.1",
+    "hono": "4.13.8",
+    "zod": "4.6.5",
+    "@memory-palace/runtime": "workspace:*",
+    "@modelcontextprotocol/hono": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0"
+  },
+  "devDependencies": {
+    "@memory-palace/test-support": "workspace:*"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@memory-palace/integration-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@memory-palace/core": "workspace:*",
+    "@memory-palace/runtime": "workspace:*",
+    "@memory-palace/shared": "workspace:*",
+    "@memory-palace/storage-pg": "workspace:*",
+    "@memory-palace/test-support": "workspace:*"
+  }
+}

@@ -1,0 +1,36 @@
+# deps
+node_modules/
+
+# build output
+dist/
+*.tsbuildinfo
+
+# local dev Postgres cluster + pnpm store (kept inside the repo for self-containment)
+.local-pg/
+.pnpm-store/
+
+# env
+.env
+.env.*
+!.env.example
+
+# runtime data
+data/
+*.log
+logs/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# tooling caches
+.npm-cache/
+.pw-browsers/
+
+# eval output (the baseline is committed; runs are not)
+evals/runs/*
+!evals/runs/baseline-mock.json
+
+# local backups
+backups/

@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "outDir": "dist", "rootDir": "src", "types": ["node"] },
+  "include": ["src"],
+  "references": [
+    { "path": "../shared" },
+    { "path": "../core" },
+    { "path": "../storage-pg" },
+    { "path": "../runtime" },
+    { "path": "../test-support" }
+  ]
+}

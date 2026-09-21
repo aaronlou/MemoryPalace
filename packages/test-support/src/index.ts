@@ -1,0 +1,115 @@
+import type { EmbeddingPort, LlmPort } from "@memory-palace/core"
+import type { Runtime } from "@memory-palace/runtime"
+import { createRuntime } from "@memory-palace/runtime"
+import type { ConfigOverrides } from "@memory-palace/shared"
+import { FixedClock } from "@memory-palace/shared"
+import { PgDatabase, readEmbeddingDim, VECTOR_DIM } from "@memory-palace/storage-pg"
+
+/**
+ * Test support.
+ *
+ * A separate package rather than a helper inside each test file: every
+ * integration test needs the same three things (a runtime on mock providers, a
+ * frozen clock, and a clean database), and letting those drift between files is
+ * how flaky suites are born. It is separate from `runtime` so that production
+ * code cannot accidentally import test wiring.
+ */
+
+export interface TestRuntime extends Runtime {
+  userId: string
+  clock: FixedClock
+  cleanup(): Promise<void>
+}
+
+export interface TestRuntimeOptions {
+  userId?: string
+  /** Frozen "now". Temporal tests depend on this being deterministic. */
+  now?: string
+  config?: ConfigOverrides
+  /** Replace the language model, e.g. with a failing one. */
+  llm?: LlmPort
+  /** Replace the embedding provider. */
+  embeddings?: EmbeddingPort
+}
+
+const DEFAULT_TEST_DB = "postgresql://mp@127.0.0.1:55432/memory_palace"
+
+/**
+ * Async because the embedding width is read from the schema.
+ *
+ * `pnpm embedding:dim` makes the vector column a per-deployment property, so a
+ * suite that hardcoded 1024 would break the moment someone switched models.
+ * Asking the database keeps the tests correct at any width.
+ */
+export async function createTestRuntime(options: TestRuntimeOptions = {}): Promise<TestRuntime> {
+  const userId = options.userId ?? "test-user"
+  const clock = new FixedClock(options.now ?? "2026-09-21T12:00:00.000Z")
+  const databaseUrl = options.config?.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB
+
+  const probe = new PgDatabase(databaseUrl, 1)
+  let schemaDim: number = VECTOR_DIM
+  try {
+    schemaDim = (await readEmbeddingDim(probe)) ?? VECTOR_DIM
+  } finally {
+    await probe.close()
+  }
+
+  const override = options.config ?? {}
+  const runtime = createRuntime({
+    noCache: true,
+    clock,
+    llm: options.llm,
+    embeddings: options.embeddings,
+    config: {
+      ...override,
+      databaseUrl: override.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB,
+      userId: override.userId ?? userId,
+      logLevel: override.logLevel ?? "error",
+      // Mock providers: the suite must run with no credentials and no network.
+      llm: { provider: "mock", ...(override.llm ?? {}) },
+      embedding: { provider: "mock", dim: schemaDim, ...(override.embedding ?? {}) },
+    },
+  })
+
+  return Object.assign(runtime, {
+    userId,
+    clock,
+    async cleanup() {
+      await runtime.close()
+    },
+  })
+}
+
+/** Delete every row. Uses TRUNCATE so tests cannot leak state between files. */
+export async function truncateAll(db: PgDatabase): Promise<void> {
+  await db.query(
+    `TRUNCATE observations, memories, memory_relations, entities, memory_entities,
+              memory_sources, agent_policies, extraction_runs, memory_embeddings
+     RESTART IDENTITY CASCADE`,
+  )
+}
+
+/** All memory rows for a user, oldest first. Handy for assertions. */
+export async function allMemories(db: PgDatabase, userId: string): Promise<MemoryRowLite[]> {
+  const { rows } = await db.query<MemoryRowLite>(
+    `SELECT id, type, content, status, valid_from, valid_until, recorded_at, superseded_at,
+            confidence, importance, reinforced_count
+       FROM memories WHERE user_id = $1 ORDER BY recorded_at, id`,
+    [userId],
+  )
+  return rows
+}
+
+export interface MemoryRowLite {
+  id: string
+  type: string
+  content: string
+  status: string
+  valid_from: Date | null
+  valid_until: Date | null
+  recorded_at: Date
+  superseded_at: Date | null
+  confidence: number
+  importance: number
+  reinforced_count: number
+}
