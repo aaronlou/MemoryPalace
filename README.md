@@ -8,10 +8,11 @@ in how much is stored; it is in whether an agent retrieves the right thing at th
 right moment, and whether it can tell what is *currently* true from what *used* to
 be.
 
-> Status: v0.1, working end to end. 158 tests green. The mock providers let the
+> Status: v0.1, working end to end. 170 tests green. The mock providers let the
 > whole system — including the evaluation suite — run with no API key and no
 > network. Cold start from an empty directory takes about 90 seconds, of which
-> most is dependency installation.
+> most is dependency installation. CI runs lint, migrations, the build and the
+> whole suite on every push, on mock providers, so it costs nothing.
 
 ---
 
@@ -214,10 +215,10 @@ something.
 
 | Provider | What it is | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
 |---|---|---|---|---|---|
-| `oracle` | returns the expected answer — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.833 | 100% |
+| `oracle` | returns the expected answer — calibrates the *harness* | **1.000** | **100%** | 0.714 / 0.786 | 100% |
 | `null` | stores nothing | **0.000** | 10% | — | — |
-| `mock` | rule-based, no API key | 0.750 | 30% | 0.750 / 0.833 | 100% |
-| **DeepSeek + local embeddings** | the real stack | **0.933** | **100%** | 0.833 / 0.917 | 100% |
+| `mock` | rule-based, no API key | 0.750 | 30% | 0.714 / 0.786 | 100% |
+| **DeepSeek + local embeddings** | the real stack | **0.933** | **100%** | *re-measuring* | 100% |
 
 The real stack is DeepSeek (`deepseek-chat` for extraction, `deepseek-reasoner`
 for adjudication) with a local embedding model served by Ollama, so no memory text
@@ -227,7 +228,29 @@ The oracle and null runs are asserted in the test suite: if a perfect model does
 not score 1.0 and an empty one 0.0, then a real score like "F1 = 0.75" is
 measuring the harness rather than the system.
 
-**Two honest notes about this table.**
+**Three honest notes about this table.**
+
+*The recall suite gained two cases, and the offline numbers moved because of it.*
+`mock` and `oracle` recall went from 0.750 / 0.833 to **0.714 / 0.786** — not
+because anything regressed, but because `rec-013` is a case the offline stack
+**structurally cannot pass**: a hashing embedder has no notion of a paraphrase, so
+a question that shares no surface vocabulary with its memory is invisible to every
+route. `rec-014` is the matching guard — a negative that the offline stack does
+pass. Same direction as the correction below: a benchmark that only contains
+questions the offline stand-in can answer is measuring the stand-in.
+
+*The real-stack recall column is being re-measured, not carried over.* The previous
+0.833 / 0.917 was over a different set of recall questions, so quoting it beside
+the new offline numbers would be comparing different exams. The extraction and
+adjudication columns are unaffected — those suites did not change. To fill it in:
+
+```bash
+pnpm eval --provider real --recall-mode smart --repeat 3    # rescue enabled
+MP_RECALL_SEMANTIC_RESCUE_MARGIN=0 pnpm eval --provider real --recall-mode smart --repeat 3
+```
+
+The second run disables the rescue, so the pair isolates it. `rec-013` is the case
+that separates them.
 
 *The mock scores 0.750, not the 0.900 it scored on the first version of the
 dataset.* That earlier number was inflated: the dataset had been written while
@@ -302,8 +325,13 @@ ranges over repeated runs and refuses to call an overlapping difference a change
   asserting the author's preference, so they can no longer register as failures.
 - **Hard paraphrases.** The similarity floor is a coarse filter (see above), so a
   question that shares little surface vocabulary with the memory it needs can fall
-  below it. A stronger embedder is the real fix. The floor has been swept to its
-  optimum and cannot be lowered further without trading away negative accuracy.
+  below it. The smart path now rescues exactly these, but only when the reranker
+  confirms them — so the mechanism is live only where a real reranker is running.
+  Under the mock providers it is **inert by construction**: the mock embedder
+  derives similarity from shared tokens, so it has no notion of a paraphrase, and
+  the check on it is that it changes nothing (measured: identical scores with the
+  margin at 0.15 and at 0). `rec-013` is the live case, and it fails offline on
+  purpose. A stronger embedder is still the complementary fix, not a substitute.
 
 ### Language drift, and a correction to my own estimate
 
@@ -460,10 +488,57 @@ cosine: 0.432   -> below the 0.45 floor, so it is not recalled
 
 Lowering the floor to 0.40 would catch that case and drop negative accuracy from
 1.000 to 0.750 everywhere else — buying one true positive with several false ones.
-The better fixes are a stronger multilingual embedder (this is the concrete
-argument for `bge-m3`, which is purpose-built for Chinese retrieval) or an
-adaptive threshold relative to each query's own similarity distribution, rather
-than one number for every query.
+
+A stronger multilingual embedder is a real fix (this is the concrete argument for
+`bge-m3`, which is purpose-built for Chinese retrieval), but it is a different
+model, not a different system. Within one model, the resolution is that **the
+smart path does not have to trust cosine the way the fast path does.**
+
+### The smart path probes below the floor, and pays for it with a confirmation
+
+The fast path has nothing but scores, so its floor is all it has. The smart path
+has already paid for an LLM reranker that judges relevance directly — but
+candidates below the floor never reached it, because the floor is applied when the
+candidate is *generated*.
+
+So on the smart path the floor is split in two:
+
+```text
+              probe floor                     floor
+                   │                            │
+   ────────────────┼────────────────────────────┼──────────────►  cosine
+                   │        rescued band        │
+                   │   kept only if the         │  kept on the
+                   │   reranker confirms        │  score alone
+                   │   (relevance ≥ 0.6)        │
+```
+
+- `MP_RECALL_SEMANTIC_RESCUE_MARGIN` (default 0.15) is how far below the floor the
+  smart path probes. 0 disables it.
+- A candidate that enters this way is **rescued**, and is recalled only if its
+  rerank relevance is at least `MP_RECALL_RESCUE_MIN_RELEVANCE` (default 0.6 —
+  the rerank rubric's "useful background" band). It has no above-floor evidence of
+  its own, so it is held to a stricter bar than an ordinary hit.
+- If reranking fails, rescued candidates are dropped and the answer is the one the
+  floor would have given. Degradation goes to the old behaviour, never past it.
+- **The rescue may only add candidates; it never changes the treatment of a memory
+  another route already matched.** Anything the lexical or entity route matched
+  has evidence of its own, and the fast path would have returned it — so `smart`
+  can never recall strictly less than `fast`.
+- The **fast path never probes**: without a confirmation signal, a lowered floor
+  admits noise and nothing else.
+
+Every decision is visible in the audit trail (`kept_rescued_confirmed` /
+`rescued_unconfirmed`); a recall that "should not" have happened is otherwise
+indistinguishable from a bug.
+
+The rejected alternative is worth recording, because it is the obvious one: an
+**adaptive threshold relative to each query's own similarity distribution**. It
+does fix the example above. But a lone *irrelevant* hit is distributed exactly like
+a lone *relevant* one, so no per-query statistic can tell them apart — and such a
+rule has to lower the floor for low-scoring queries, which is precisely where the
+irrelevant hits live. It trades a tunable constant for a heuristic that cannot be
+calibrated. ADR-0006 has the full argument.
 
 ---
 

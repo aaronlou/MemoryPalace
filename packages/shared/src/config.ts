@@ -57,6 +57,24 @@ export interface Config {
      * alone, and the two have to be tuned together.
      */
     minScore: number
+    /**
+     * How far below the semantic floor the SMART recall path may probe.
+     *
+     * The floor rejects hard paraphrases along with noise — the two are not
+     * separable by cosine alone. The smart path probes below the floor and
+     * keeps a below-floor candidate only when its LLM reranker confirms the
+     * candidate's relevance (`rescueMinRelevance`). The fast path never
+     * probes: without a confirmation signal a lowered floor would only admit
+     * noise. 0 disables.
+     */
+    semanticRescueMargin: number
+    /**
+     * Rerank relevance a below-floor (rescued) candidate needs to be recalled.
+     * Mirrors the rerank rubric's "useful background" band: a rescued
+     * candidate has no above-floor evidence, so it must be at least that
+     * useful.
+     */
+    rescueMinRelevance: number
   }
   logLevel: "debug" | "info" | "warn" | "error"
   /** Directory for JSONL extraction-run logs and eval output. */
@@ -231,6 +249,8 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
         DEFAULT_SEMANTIC_FLOOR[embeddingProvider],
       ),
       minScore: floatEnv("MP_RECALL_MIN_SCORE", 0.18),
+      semanticRescueMargin: floatEnv("MP_RECALL_SEMANTIC_RESCUE_MARGIN", 0.15),
+      rescueMinRelevance: floatEnv("MP_RECALL_RESCUE_MIN_RELEVANCE", 0.6),
     },
     api: {
       port: intEnv("MP_API_PORT", 8787),

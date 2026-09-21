@@ -171,4 +171,48 @@ export const recallCases: RecallCase[] = [
     expected: [],
     expectEmpty: true,
   },
+  {
+    id: "rec-013",
+    // The live case from the README's floor analysis: cosine 0.432 against a
+    // formula that assigns no interesting weight to "讲技术概念" once it shares
+    // tokens with 整体结构/设计思想 only through meaning. Measured at 0.432 for
+    // bge-m3 — true hard paraphrase.
+    //
+    // The offline providers CANNOT pass this: the mock embedder is a hashing
+    // bag-of-tokens, so it has no notion of a paraphrase at all (the harness
+    // doc says exactly this — paraphrase recall is a property of the embedder).
+    // The case exists for `pnpm eval --provider real`, where it is the
+    // regression guard for the smart path's confirmed rescue: a candidate this
+    // far below the floor may only be recalled if the reranker vouches for it.
+    note: "Hard paraphrase: the query shares almost no surface form with the memory (real-stack case).",
+    memories: [
+      {
+        type: "preference",
+        content: "用户希望在被讲解 TypeScript 时，先了解整体结构和设计思想，再深入具体 API",
+      },
+      { type: "fact", content: "用户使用 PostgreSQL 作为主要数据库" },
+    ],
+    query: "讲技术概念的时候应该怎么组织？",
+    expected: ["整体结构"],
+    forbidden: ["PostgreSQL"],
+  },
+  {
+    id: "rec-014",
+    // The trap the rescue could open: "记忆宫殿" (the mnemonic technique) is
+    // topically adjacent to the Memory Palace project, so a real embedder can
+    // put it inside the probe band. Vouching for it would be a false positive
+    // dressed up as semantic recall, and the reranker has to refuse.
+    //
+    // The memory texts deliberately avoid the token 记忆 so the offline lexical
+    // route cannot match either: this case is decidable in both stacks.
+    note: "A question about the mnemonic technique must not surface memories about the project.",
+    memories: [
+      { type: "relationship", content: "Memory Palace 使用 PostgreSQL 存储数据" },
+      { type: "goal", content: "用户希望多个 Agent 共享同一份长期上下文" },
+    ],
+    query: "怎么练习记忆宫殿？",
+    expected: [],
+    forbidden: ["Memory Palace", "PostgreSQL"],
+    expectEmpty: true,
+  },
 ]

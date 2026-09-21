@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import type {
   EmbeddingPort,
   GenerateObjectRequest,
@@ -87,6 +88,8 @@ export interface RecallCaseResult {
   negativeCorrect: boolean
   forbiddenViolations: string[]
   returned: string[]
+  /** The fragments the case required, so a miss can say WHAT was missed. */
+  expected: string[]
 }
 
 /** Mean and range over repeated runs. */
@@ -100,6 +103,14 @@ export interface MetricRange {
 export interface EvalReport {
   label: string
   provider: ProviderKind
+  /**
+   * Which recall path produced the recall numbers.
+   *
+   * Recorded because the two paths are not comparable: `smart` may rescue
+   * candidates below the semantic floor when the reranker confirms them, so a
+   * fast run and a smart run answer different questions.
+   */
+  recallMode: "fast" | "smart"
   startedAt: string
   durationMs: number
   extraction: {
@@ -128,7 +139,19 @@ export interface EvalReport {
     costUsd: number
   }
   /** Everything a later comparison needs to know whether the runs are comparable. */
-  fingerprint: { extractionPrompt: string; adjudicationPrompt: string; modelId: string }
+  fingerprint: {
+    extractionPrompt: string
+    adjudicationPrompt: string
+    modelId: string
+    /**
+     * Hash of the golden dataset.
+     *
+     * Without it, editing a case and re-running looks exactly like a code
+     * change that moved the score — and the honest reading of such a
+     * "regression" is impossible after the fact.
+     */
+    dataset: string
+  }
   /**
    * Populated when the same evaluation was repeated.
    *
@@ -219,6 +242,16 @@ function makeProviders(
       }
     }
   }
+}
+
+/**
+ * Stable short hash of the golden dataset.
+ *
+ * Derived from the dataset's own content, so it changes when a case changes and
+ * never because of formatting. Used to refuse comparisons across a dataset edit.
+ */
+export function datasetFingerprint(): string {
+  return createHash("sha256").update(JSON.stringify(dataset)).digest("hex").slice(0, 12)
 }
 
 export async function runEval(options: EvalOptions): Promise<EvalReport> {
@@ -380,6 +413,7 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
         negativeCorrect: expectEmpty ? wasEmpty : true,
         forbiddenViolations,
         returned,
+        expected: c.expected,
       })
     }
   } finally {
@@ -404,6 +438,7 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
   return {
     label: options.label ?? `${options.provider}${embeddingChoice === "real" ? "+real-embed" : ""}`,
     provider: options.provider,
+    recallMode: options.recallMode ?? "fast",
     startedAt: startedAt.toISOString(),
     durationMs: Date.now() - startedAt.getTime(),
     extraction: {
@@ -442,6 +477,7 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
       extractionPrompt: "extraction-v1",
       adjudicationPrompt: "adjudication-v1",
       modelId: providers.counter.defaultModelId,
+      dataset: datasetFingerprint(),
     },
   }
 }

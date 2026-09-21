@@ -45,14 +45,7 @@ export async function createTestRuntime(options: TestRuntimeOptions = {}): Promi
   const userId = options.userId ?? "test-user"
   const clock = new FixedClock(options.now ?? "2026-09-21T12:00:00.000Z")
   const databaseUrl = options.config?.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB
-
-  const probe = new PgDatabase(databaseUrl, 1)
-  let schemaDim: number = VECTOR_DIM
-  try {
-    schemaDim = (await readEmbeddingDim(probe)) ?? VECTOR_DIM
-  } finally {
-    await probe.close()
-  }
+  const schemaDim = await schemaEmbeddingDim(databaseUrl)
 
   const override = options.config ?? {}
   const runtime = createRuntime({
@@ -78,6 +71,24 @@ export async function createTestRuntime(options: TestRuntimeOptions = {}): Promi
       await runtime.close()
     },
   })
+}
+
+/**
+ * The vector width the schema actually declares.
+ *
+ * Exported because a test that injects its own embedder has to build vectors of
+ * the right length, and it has to learn that length the same way the runtime
+ * does — from the database, not from a constant.
+ */
+export async function schemaEmbeddingDim(
+  databaseUrl: string = process.env.DATABASE_URL ?? DEFAULT_TEST_DB,
+): Promise<number> {
+  const probe = new PgDatabase(databaseUrl, 1)
+  try {
+    return (await readEmbeddingDim(probe)) ?? VECTOR_DIM
+  } finally {
+    await probe.close()
+  }
 }
 
 /** Delete every row. Uses TRUNCATE so tests cannot leak state between files. */

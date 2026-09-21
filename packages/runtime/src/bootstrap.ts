@@ -75,6 +75,8 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     defaultUserId: config.userId,
     minSemanticSimilarity: config.recall.minSemanticSimilarity,
     minScore: config.recall.minScore,
+    semanticRescueMargin: config.recall.semanticRescueMargin,
+    rescueMinRelevance: config.recall.rescueMinRelevance,
   })
 
   logger.info("runtime ready", {

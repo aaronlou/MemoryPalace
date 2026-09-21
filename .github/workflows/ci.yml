@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # The suite runs against a real PostgreSQL with pgvector, not a stub: the
+    # behaviour worth protecting (bi-temporal queries, ANN search, the
+    # consistency of the `status` projection) only exists in SQL.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: mp
+          POSTGRES_PASSWORD: mp
+          POSTGRES_DB: memory_palace
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mp -d memory_palace"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://mp:mp@127.0.0.1:5432/memory_palace
+      # Mock providers: no API key, no network, no cost. The oracle/null
+      # calibration assertions in evals/harness.test.ts run here.
+      MP_LLM_PROVIDER: mock
+      MP_EMBEDDING_PROVIDER: mock
+      MP_LOG_LEVEL: error
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from the `packageManager` field, so CI cannot drift from
+      # what developers run locally.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      # Migrations before the build: the schema is what the runtime asserts its
+      # configured embedding width against.
+      - run: pnpm migrate
+
+      - run: pnpm build
+
+      - run: pnpm test

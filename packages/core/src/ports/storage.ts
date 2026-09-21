@@ -175,11 +175,17 @@ export interface SearchOptions {
   /** Defaults to currently-valid statuses only. */
   statuses?: MemoryStatus[]
   /**
-   * Minimum route-specific score for a hit to count.
+   * Minimum score for a hit to count, where the route's score is comparable
+   * across queries.
    *
-   * Without a floor, an approximate-nearest-neighbour search always returns
-   * `limit` results no matter how dissimilar they are — so an unrelated query
-   * still surfaces memories, and "I don't know" becomes impossible.
+   * Only the semantic route needs one: an approximate-nearest-neighbour search
+   * always returns `limit` rows no matter how dissimilar they are, so without a
+   * floor an unrelated query still surfaces memories and "I don't know" becomes
+   * impossible.
+   *
+   * Routes that are gated structurally do not use it. The lexical route, for
+   * instance, matches on shared discriminative terms (ADR-0005): arriving at all
+   * is the gate, and its score orders results rather than admitting them.
    */
   minScore?: number
 }

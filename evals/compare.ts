@@ -67,6 +67,17 @@ if (a.fingerprint.adjudicationPrompt !== b.fingerprint.adjudicationPrompt)
   mismatched.push("adjudication prompt")
 if (a.fingerprint.modelId !== b.fingerprint.modelId) mismatched.push("model")
 
+// Runs recorded before this field existed have no value, so only a genuine
+// disagreement between two known values is worth reporting.
+if (a.recallMode !== undefined && b.recallMode !== undefined && a.recallMode !== b.recallMode)
+  mismatched.push("recall mode (fast vs smart)")
+if (
+  a.fingerprint.dataset !== undefined &&
+  b.fingerprint.dataset !== undefined &&
+  a.fingerprint.dataset !== b.fingerprint.dataset
+)
+  mismatched.push("golden dataset")
+
 console.log(`\nA: ${pathA}  (${a.provider}, ${a.startedAt})`)
 console.log(`B: ${pathB}  (${b.provider}, ${b.startedAt})`)
 

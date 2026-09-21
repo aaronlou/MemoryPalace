@@ -10,3 +10,4 @@ that were rejected, and what the decision costs.
 | [0003](./0003-provider-abstraction-boundary.md) | Model access goes through ports defined in the domain |
 | [0004](./0004-one-adjudication-call.md) | Dedup and conflict detection are one model call |
 | [0005](./0005-qualifying-routes-and-similarity-floors.md) | Recall requires retrieval evidence; nothing is padded |
+| [0006](./0006-confirmed-rescue-below-the-semantic-floor.md) | A below-floor candidate is recalled only if the reranker confirms it |

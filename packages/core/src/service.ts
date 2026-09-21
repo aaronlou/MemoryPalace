@@ -31,6 +31,10 @@ export interface MemoryPalaceDeps {
   minSemanticSimilarity?: number
   /** Final blended-score threshold; defaults to the built-in value. */
   minScore?: number
+  /** How far below the floor the smart path may probe. 0 disables. */
+  semanticRescueMargin?: number
+  /** Rerank relevance a below-floor (rescued) candidate needs to survive. */
+  rescueMinRelevance?: number
 }
 
 /**

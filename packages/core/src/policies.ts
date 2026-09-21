@@ -156,8 +156,6 @@ export const RECALL_DEFAULTS = {
    * surface memories.
    */
   minSemanticSimilarity: 0.15,
-  /** Minimum trigram similarity for a lexical hit to count. */
-  minLexicalSimilarity: 0.03,
   /**
    * Routes that may INTRODUCE a candidate.
    *
@@ -167,6 +165,32 @@ export const RECALL_DEFAULTS = {
    * only contribute to ordering, via RRF.
    */
   qualifyingRoutes: ["semantic", "lexical", "entity"] as const,
+  /**
+   * How far below the semantic floor the SMART path may probe for candidates.
+   *
+   * The floor exists because cosine similarity alone cannot separate relevant
+   * from irrelevant (measured on the golden dataset the two distributions
+   * overlap). But it also rejects hard paraphrases: a query that shares little
+   * surface vocabulary with the memory it needs can land below the floor and
+   * become unretrievable.
+   *
+   * The smart path already has the tool the fast path lacks — an LLM that can
+   * judge relevance, not just measure it. So it probes `margin` below the floor
+   * and keeps a below-floor hit ONLY when the reranker confirms it (see
+   * `rescueMinRelevance`). The fast path never probes: without a confirmation
+   * signal a lowered floor would only admit noise.
+   *
+   * 0 disables the probe entirely.
+   */
+  semanticRescueMargin: 0.15,
+  /**
+   * Rerank relevance a below-floor candidate needs to be recalled.
+   *
+   * 0.6 mirrors the rerank rubric's "useful background the answer should
+   * respect" band — a rescued candidate must be at least that useful, because
+   * unlike an above-floor hit it has no independent evidence going for it.
+   */
+  rescueMinRelevance: 0.6,
   /** RRF smoothing constant. 60 is the value from the original paper. */
   rrfK: 60,
   /** `auto` escalates to the smart path when the fast path is this weak. */

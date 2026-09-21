@@ -25,7 +25,10 @@ const repeat = Math.max(1, Number.parseInt(arg("repeat", "1") ?? "1", 10))
 function printReport(report: EvalReport): void {
   console.log(`\n${"═".repeat(78)}`)
   console.log(`  Memory Palace — evaluation report`)
-  console.log(`  provider: ${report.provider}   label: ${report.label}   ${report.durationMs}ms`)
+  console.log(
+    `  provider: ${report.provider}   recall: ${report.recallMode}   ` +
+      `label: ${report.label}   ${report.durationMs}ms`,
+  )
   console.log(`${"═".repeat(78)}\n`)
 
   console.log("EXTRACTION")
@@ -68,12 +71,18 @@ function printReport(report: EvalReport): void {
       `forbidden-hit rate ${formatPercent(report.recall.forbiddenViolationRate)}`,
   )
   for (const c of report.recall.cases) {
-    const flag = c.negativeCorrect && c.forbiddenViolations.length === 0 ? "ok  " : "BAD "
+    // A positive case that recalled nothing used to print "ok" as long as it
+    // avoided a forbidden memory — which hid exactly the failures this suite
+    // exists to show. Flag a miss as a miss.
+    const missed = c.expectedCount > 0 && c.recallAtK < 1
+    const bad = c.expectEmpty ? !c.wasEmpty : missed
+    const flag = bad || c.forbiddenViolations.length > 0 ? "BAD " : "ok  "
     const detail =
       c.expectedCount === 0
         ? `returned=${c.returnedCount} (expected empty)`
         : `P@5=${formatRatio(c.precisionAtK)} R@5=${formatRatio(c.recallAtK)}`
     console.log(`    ${flag} ${c.id}  ${detail}`)
+    if (missed) console.log(`         expected: ${c.expected.join(" | ")}`)
     if (c.forbiddenViolations.length > 0) {
       console.log(`         FORBIDDEN: ${c.forbiddenViolations.join(" | ")}`)
     }

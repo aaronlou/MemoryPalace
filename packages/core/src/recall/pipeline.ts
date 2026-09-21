@@ -30,6 +30,10 @@ export interface RecallDeps {
   minSemanticSimilarity?: number
   /** Minimum blended score for a memory to survive ranking. */
   minScore?: number
+  /** How far below the floor the smart path may probe. 0 disables. */
+  semanticRescueMargin?: number
+  /** Rerank relevance a below-floor (rescued) candidate needs to survive. */
+  rescueMinRelevance?: number
 }
 
 export interface RecallAuditEntry {
@@ -62,6 +66,8 @@ export class RecallPipeline {
   private readonly logger: Logger
   private readonly minSemanticSimilarity: number
   private readonly minScore: number
+  private readonly semanticRescueMargin: number
+  private readonly rescueMinRelevance: number
 
   constructor(deps: RecallDeps) {
     this.store = deps.store
@@ -72,6 +78,8 @@ export class RecallPipeline {
     this.logger = deps.logger
     this.minSemanticSimilarity = deps.minSemanticSimilarity ?? RECALL_DEFAULTS.minSemanticSimilarity
     this.minScore = deps.minScore ?? RECALL_DEFAULTS.minScore
+    this.semanticRescueMargin = deps.semanticRescueMargin ?? RECALL_DEFAULTS.semanticRescueMargin
+    this.rescueMinRelevance = deps.rescueMinRelevance ?? RECALL_DEFAULTS.rescueMinRelevance
   }
 
   async recall(query: RecallQuery): Promise<RecallResult> {
@@ -123,10 +131,12 @@ export class RecallPipeline {
       filter: {},
     }
 
-    // Each route gets its own floor: cosine similarity and trigram similarity
-    // live on different scales, so one threshold cannot serve both.
+    // The semantic route needs a floor because an ANN search always returns
+    // `limit` rows. The lexical route does not: its gate is the shared
+    // discriminative-term check in SQL (ADR-0005), so a hit already means the
+    // query and the memory are about the same thing.
     const semanticOpts = { ...options, minScore: this.minSemanticSimilarity }
-    const lexicalOpts = { ...options, minScore: RECALL_DEFAULTS.minLexicalSimilarity }
+    const lexicalOpts = options
 
     const [vector] = await this.embeddings.embed([query.query])
     const [semantic, lexical, recent, important] = await Promise.all([
@@ -208,8 +218,8 @@ export class RecallPipeline {
       filter: {},
     }
 
-    const semanticOpts = { ...options, minScore: this.minSemanticSimilarity }
-    const lexicalOpts = { ...options, minScore: RECALL_DEFAULTS.minLexicalSimilarity }
+    const semanticOpts = { ...options, minScore: this.semanticProbeFloor() }
+    const lexicalOpts = options
 
     const [vector] = await this.embeddings.embed([query.query])
     const [semantic, lexical, byEntity, recent, important] = await Promise.all([
@@ -221,6 +231,20 @@ export class RecallPipeline {
       this.search.recent(query.userId, { ...options, limit: RECALL_DEFAULTS.limit }),
       this.search.important(query.userId, { ...options, limit: RECALL_DEFAULTS.limit }),
     ])
+
+    // Candidates that only entered because the smart path probed below the
+    // floor. Cosine alone is not evidence for these — the reranker must
+    // confirm them before they may be recalled.
+    //
+    // A memory that ALSO matched the lexical or entity route has independent
+    // above-floor evidence of its own, so it is not waiting to be rescued and
+    // keeps its fast-path treatment.
+    const evidenced = new Set([...lexical, ...byEntity].map((h) => h.memoryId))
+    const rescued = new Set(
+      semantic
+        .filter((h) => h.score < this.minSemanticSimilarity && !evidenced.has(h.memoryId))
+        .map((h) => h.memoryId),
+    )
 
     return this.finish({
       query,
@@ -242,7 +266,20 @@ export class RecallPipeline {
       mode: "smart",
       escalated,
       priorConsidered,
+      rescuedIds: rescued,
     })
+  }
+
+  /**
+   * The floor the smart path uses for candidate GENERATION: the configured
+   * floor minus the rescue margin.
+   *
+   * Kept separate from `minSemanticSimilarity`, which remains the threshold
+   * for trusting a hit on cosine alone. The gap between the two is populated
+   * exclusively by candidates the reranker gets to vouch for (or veto).
+   */
+  private semanticProbeFloor(): number {
+    return Math.max(0, this.minSemanticSimilarity - this.semanticRescueMargin)
   }
 
   // -------------------------------------------------------------------------
@@ -263,6 +300,8 @@ export class RecallPipeline {
     mode: "fast" | "smart"
     escalated: boolean
     priorConsidered?: RecallAuditEntry[]
+    /** Below-floor semantic candidates; only recallable if the reranker confirms. */
+    rescuedIds?: Set<string>
   }): Promise<{ result: RecallResult; considered: RecallAuditEntry[] }> {
     const { query } = input
     const limit = query.limit ?? RECALL_DEFAULTS.limit
@@ -368,15 +407,26 @@ export class RecallPipeline {
     scored.sort((a, b) => b.score - a.score)
 
     // --- threshold: returning nothing is a valid, correct answer --------------
-    const kept = scored.filter((s) => s.score >= this.minScore)
+    // One decision function for both the filter and the audit trail: an audit
+    // entry that disagreed with the filter would be worse than no audit at all.
+    const verdict = (s: ScoredMemory): { kept: boolean; reason: string } => {
+      if (s.score < this.minScore) return { kept: false, reason: "below_min_score" }
+      if (input.rescuedIds?.has(s.memory.id)) {
+        // No above-floor evidence of its own, so cosine cannot speak for it —
+        // only the reranker can. If reranking failed entirely, or the candidate
+        // never made the shortlist, the safe answer is to drop it and behave
+        // like the fast path would have.
+        const confirmed = (rerankScores?.get(s.memory.id) ?? 0) >= this.rescueMinRelevance
+        return confirmed
+          ? { kept: true, reason: "kept_rescued_confirmed" }
+          : { kept: false, reason: "rescued_unconfirmed" }
+      }
+      return { kept: true, reason: "kept" }
+    }
+
+    const kept = scored.filter((s) => verdict(s).kept)
     for (const s of scored) {
-      const keptIt = s.score >= this.minScore
-      considered.push({
-        memoryId: s.memory.id,
-        score: s.score,
-        kept: keptIt,
-        reason: keptIt ? "kept" : "below_min_score",
-      })
+      considered.push({ memoryId: s.memory.id, score: s.score, ...verdict(s) })
     }
 
     const top = kept.slice(0, limit)

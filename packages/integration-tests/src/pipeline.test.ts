@@ -1,8 +1,15 @@
-import type { GenerateObjectRequest, GenerateObjectResult, LlmPort } from "@memory-palace/core"
+import type {
+  EmbeddingPort,
+  GenerateObjectRequest,
+  GenerateObjectResult,
+  LlmPort,
+  Memory,
+  MemoryType,
+} from "@memory-palace/core"
 import { newId } from "@memory-palace/shared"
 import { exportAll, importAll, wipeUser } from "@memory-palace/storage-pg"
 import type { TestRuntime } from "@memory-palace/test-support"
-import { createTestRuntime, truncateAll } from "@memory-palace/test-support"
+import { createTestRuntime, schemaEmbeddingDim, truncateAll } from "@memory-palace/test-support"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 /**
@@ -34,6 +41,137 @@ class FailingLlm implements LlmPort {
   readonly defaultModelId = "failing"
   async generateObject<T>(_req: GenerateObjectRequest<T>): Promise<GenerateObjectResult<T>> {
     throw new Error("provider unavailable")
+  }
+}
+
+/**
+ * A model whose rerank verdict is dictated by the test.
+ *
+ * Recall tests need to control the one signal that decides whether a
+ * below-floor candidate survives, without also having to control retrieval.
+ * `"fail"` makes the rerank call throw, which is the case that must degrade to
+ * the fast-path answer rather than leak unconfirmed candidates.
+ */
+class StubRerankLlm implements LlmPort {
+  readonly defaultModelId = "stub-rerank"
+  private readonly relevance: number | "fail"
+
+  constructor(relevance: number | "fail") {
+    this.relevance = relevance
+  }
+
+  async generateObject<T>(req: GenerateObjectRequest<T>): Promise<GenerateObjectResult<T>> {
+    if (req.schemaName === "MemoryRerank") {
+      if (this.relevance === "fail") throw new Error("reranker unavailable")
+      // Same shape the real rerank prompt uses; ids the model did not receive
+      // are ignored by the pipeline, so parsing them out is the honest stub.
+      const rankings = [...req.prompt.matchAll(/\[\d+\]\s+id=(\S+)/g)].map((m) => ({
+        memoryId: m[1] as string,
+        relevance: this.relevance as number,
+        reason: "canned verdict",
+      }))
+      return this.ok({ rankings } as T)
+    }
+    if (req.schemaName === "QueryUnderstanding") {
+      return this.ok({
+        entities: [],
+        taskType: null,
+        keywords: [],
+        intent: "general",
+        timeRangeFrom: null,
+        timeRangeTo: null,
+      } as T)
+    }
+    throw new Error(`stub received an unexpected schema: ${req.schemaName}`)
+  }
+
+  private ok<T>(value: T): GenerateObjectResult<T> {
+    return {
+      value,
+      usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      modelId: this.defaultModelId,
+      promptHash: "stub",
+      cached: false,
+    }
+  }
+}
+
+/**
+ * An embedder whose geometry the test dictates.
+ *
+ * The mock embedder derives similarity from shared tokens, which is exactly
+ * what makes it unusable here: a text pair it considers close also shares a
+ * token, so the lexical route matches it and the semantic floor is never the
+ * deciding factor. It cannot express "semantically close, lexically unrelated"
+ * — the precise situation the rescue exists for.
+ *
+ * This one maps marked texts onto vectors with a known cosine and everything
+ * else onto an orthogonal direction, so the tests exercise the rescue rule
+ * rather than the embedder's quirks.
+ */
+class BandEmbedding implements EmbeddingPort {
+  readonly modelId = "band-test-embedding"
+  readonly dim: number
+
+  constructor(dim: number) {
+    this.dim = dim
+  }
+
+  async embed(texts: string[]): Promise<number[][]> {
+    return texts.map((text) => {
+      // Query side: unit vector on the first axis.
+      if (text.includes("安排顺序") || text.includes("项目代号是什么")) {
+        return this.unit(1, 0)
+      }
+      // Memory side: cosine 0.74 with the query vector — above the probe floor
+      // (0.01), far below the configured floor (0.99), so it must be rescued.
+      if (text.includes("整体骨架") || text.includes("Phoenix")) {
+        return this.unit(1, 0.9)
+      }
+      return this.unit(0, 0, 1)
+    })
+  }
+
+  private unit(...values: number[]): number[] {
+    const vec = new Array<number>(this.dim).fill(0)
+    let norm = 0
+    for (const [i, v] of values.entries()) {
+      vec[i] = v
+      norm += v * v
+    }
+    norm = Math.sqrt(norm)
+    return vec.map((v) => v / norm)
+  }
+}
+
+/** Insert a memory together with its embedding, as the persistence stage would. */
+async function seedWithEmbedding(
+  rt: TestRuntime,
+  entries: Array<{ type: MemoryType; content: string }>,
+): Promise<void> {
+  for (const [i, e] of entries.entries()) {
+    const memory: Memory = {
+      id: newId("mem"),
+      userId: rt.userId,
+      type: e.type,
+      content: e.content,
+      confidence: 0.92,
+      importance: 0.75,
+      validFrom: "2026-01-01T00:00:00.000Z",
+      recordedAt: `2026-0${i + 1}-01T00:00:00.000Z`,
+      status: "active",
+      reinforcedCount: 0,
+    }
+    await rt.storage.store.insertMemory(memory)
+    const [vector] = await rt.llm.embeddings.embed([`${e.type}\n${e.content}`])
+    if (!vector) continue
+    await rt.storage.store.upsertEmbedding({
+      userId: rt.userId,
+      memoryId: memory.id,
+      model: rt.llm.embeddings.modelId,
+      dim: rt.llm.embeddings.dim,
+      vector,
+    })
   }
 }
 
@@ -436,6 +574,128 @@ describe("recall returns nothing rather than padding", () => {
 
     // Design doc Case 4. An empty answer must be reachable, or the agent can
     // never distinguish "nothing known" from "something vaguely related".
+    expect(result.memories).toHaveLength(0)
+    expect(result.diagnostics.returnedEmpty).toBe(true)
+  })
+})
+
+describe("smart path: rescued paraphrases below the semantic floor", () => {
+  // A floor of 0.99 with a 0.98 margin probes down to 0.01, so every semantic
+  // hit is a rescued candidate. That isolates the rescue rule from whatever the
+  // embedder happens to score — only the reranker's verdict can decide.
+  const FLOOR_CONFIG = {
+    recall: { minSemanticSimilarity: 0.99, semanticRescueMargin: 0.98, rescueMinRelevance: 0.6 },
+  }
+  const PARAPHRASE = {
+    type: "preference" as const,
+    content: "用户偏好先看整体骨架再看实现细节",
+  }
+  const PARAPHRASE_QUERY = "讲解时应该怎么安排顺序？"
+
+  let confirmed: TestRuntime
+  let refused: TestRuntime
+  let failing: TestRuntime
+
+  beforeAll(async () => {
+    const dim = await schemaEmbeddingDim()
+    confirmed = await createTestRuntime({
+      userId: "rescue-confirmed",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm(0.9),
+      embeddings: new BandEmbedding(dim),
+    })
+    refused = await createTestRuntime({
+      userId: "rescue-refused",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm(0.2),
+      embeddings: new BandEmbedding(dim),
+    })
+    failing = await createTestRuntime({
+      userId: "rescue-failing",
+      config: FLOOR_CONFIG,
+      llm: new StubRerankLlm("fail"),
+      embeddings: new BandEmbedding(dim),
+    })
+  })
+
+  afterAll(async () => {
+    await Promise.all([confirmed, refused, failing].map((r) => r.cleanup()))
+  })
+
+  it("recalls a below-floor candidate once the reranker confirms it", async () => {
+    await seedWithEmbedding(confirmed, [PARAPHRASE])
+
+    const audit = await confirmed.palace.recallWithAudit({
+      userId: confirmed.userId,
+      query: PARAPHRASE_QUERY,
+      mode: "smart",
+    })
+
+    expect(audit.result.memories.map((m) => m.memory.content)).toContain(PARAPHRASE.content)
+
+    // The audit has to say WHY it was let through, or the rescue is invisible
+    // to anyone debugging a recall that "shouldn't" have happened.
+    const kept = audit.considered.find((e) => e.kept)
+    expect(kept?.reason).toBe("kept_rescued_confirmed")
+  })
+
+  it("drops a below-floor candidate the reranker refuses", async () => {
+    await seedWithEmbedding(refused, [PARAPHRASE])
+
+    const audit = await refused.palace.recallWithAudit({
+      userId: refused.userId,
+      query: PARAPHRASE_QUERY,
+      mode: "smart",
+    })
+
+    expect(audit.result.memories).toHaveLength(0)
+    expect(audit.result.diagnostics.returnedEmpty).toBe(true)
+    expect(audit.considered.find((e) => !e.kept)?.reason).toBe("rescued_unconfirmed")
+  })
+
+  it("never probes below the floor on the fast path", async () => {
+    // Same store, same query, and a reranker that WOULD have confirmed it: the
+    // fast path has no reranker to appeal to, so the floor has to hold.
+    await seedWithEmbedding(confirmed, [PARAPHRASE])
+
+    const result = await confirmed.palace.recall({
+      userId: confirmed.userId,
+      query: PARAPHRASE_QUERY,
+      mode: "fast",
+    })
+
+    expect(result.memories).toHaveLength(0)
+  })
+
+  it("leaves a memory another route matched alone, even with a refusing reranker", async () => {
+    // The rescue may only ADD candidates. This memory is in the semantic probe
+    // band but also matched the lexical route, so the fast path would have
+    // recalled it — demanding rerank confirmation here would make the smart
+    // path recall strictly less than the fast path.
+    await seedWithEmbedding(refused, [{ type: "fact", content: "用户的项目代号是 Phoenix" }])
+
+    const audit = await refused.palace.recallWithAudit({
+      userId: refused.userId,
+      query: "Phoenix 项目代号是什么？",
+      mode: "smart",
+    })
+
+    const kept = audit.considered.find((e) => e.kept)
+    expect(kept?.reason).toBe("kept")
+    expect(audit.result.memories.map((m) => m.memory.content)).toContain("用户的项目代号是 Phoenix")
+  })
+
+  it("degrades to the fast-path answer when reranking fails", async () => {
+    await seedWithEmbedding(failing, [PARAPHRASE])
+
+    const result = await failing.palace.recall({
+      userId: failing.userId,
+      query: PARAPHRASE_QUERY,
+      mode: "smart",
+    })
+
+    // A broken reranker must not fail the query, and must not let unconfirmed
+    // candidates through either: the answer is the one the floor would give.
     expect(result.memories).toHaveLength(0)
     expect(result.diagnostics.returnedEmpty).toBe(true)
   })
