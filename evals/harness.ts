@@ -9,6 +9,7 @@ import type {
 import { createLlmBundle, MockEmbedding, RuleBasedLlm } from "@memory-palace/llm"
 import type { Runtime } from "@memory-palace/runtime"
 import { createRuntime } from "@memory-palace/runtime"
+import type { Config } from "@memory-palace/shared"
 import { loadConfig, newId } from "@memory-palace/shared"
 import { truncateAll } from "@memory-palace/test-support"
 import type { DecisionKind, EvolutionCase, ExpectMemory, RecallCase } from "./datasets/index.js"
@@ -166,6 +167,17 @@ export interface EvalReport {
     embeddingDim: number
     /** Which recall path was measured. Fast, smart and auto answer differently. */
     recallMode: "fast" | "smart" | "auto"
+    /**
+     * The recall thresholds in force, recorded in full.
+     *
+     * Every one of these changes what the suite returns, so two runs at
+     * different settings are answering different questions. This is snapshotted
+     * from the loaded config rather than listing fields by hand: the last knob
+     * added here (`semanticRescueMargin`) moved P@5 from 0.857 to 0.929 on its
+     * own, and a hand-maintained list is exactly how a knob escapes the
+     * fingerprint and lets a threshold change be reported as an improvement.
+     */
+    recallThresholds: Config["recall"]
   }
   /**
    * Populated when the same evaluation was repeated.
@@ -496,6 +508,7 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
       embeddingModel: providers.embeddings.modelId,
       embeddingDim: providers.embeddings.dim,
       recallMode: options.recallMode ?? "fast",
+      recallThresholds: { ...config.recall },
     },
   }
 }

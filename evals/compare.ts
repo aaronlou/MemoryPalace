@@ -84,6 +84,25 @@ if (a.fingerprint.recallMode !== b.fingerprint.recallMode) {
 // disagreement between two known values is worth reporting.
 if (a.recallMode !== undefined && b.recallMode !== undefined && a.recallMode !== b.recallMode)
   mismatched.push("recall mode (fast vs smart)")
+
+// The recall thresholds decide what the suite can return at all, so moving one
+// is not a code change to be scored — it is a different question. Named with
+// their values, because "thresholds differ" is not actionable on its own.
+const ta = a.fingerprint.recallThresholds
+const tb = b.fingerprint.recallThresholds
+if (ta && tb) {
+  const before = ta as Record<string, number>
+  const after = tb as Record<string, number>
+  const changed = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(
+    (k) => before[k] !== after[k],
+  )
+  if (changed.length > 0) {
+    mismatched.push(
+      `recall thresholds (${changed.map((k) => `${k} ${before[k]} vs ${after[k]}`).join(", ")})`,
+    )
+  }
+}
+
 if (
   a.fingerprint.dataset !== undefined &&
   b.fingerprint.dataset !== undefined &&
