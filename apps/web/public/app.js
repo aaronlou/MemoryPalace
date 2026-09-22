@@ -9,6 +9,17 @@
  * goes through `esc()`; there is no `innerHTML` on an unescaped value anywhere.
  */
 
+import {
+  currentLang,
+  evidenceLabel,
+  initialLang,
+  priorStatusLabel,
+  setLang,
+  statusLabel,
+  t,
+  typeLabel,
+} from "./i18n.js"
+
 const $ = (sel, root = document) => root.querySelector(sel)
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)]
 
@@ -72,22 +83,11 @@ function reportError(error) {
 
 // ------------------------------------------------------------------ format --
 
-const TYPE_LABEL = {
-  goal: "Goal",
-  preference: "Preference",
-  fact: "Fact",
-  decision: "Decision",
-  relationship: "Relationship",
-  experience: "Experience",
-  event: "Event",
-}
-
-const STATUS_LABEL = {
-  active: "current",
-  pending: "needs review",
-  superseded: "no longer true",
-  archived: "archived",
-}
+// Labels resolve through the i18n dictionary, so they can never fall out of step
+// with the language the rest of the page is in. The raw value is the fallback: an
+// unrecognised type renders as its identifier rather than as a blank.
+const TYPE_LABEL = new Proxy({}, { get: (_t, key) => typeLabel(String(key)) })
+const STATUS_LABEL = new Proxy({}, { get: (_t, key) => statusLabel(String(key)) })
 
 const month = (iso) => (iso ? String(iso).slice(0, 7) : null)
 
@@ -95,9 +95,9 @@ const month = (iso) => (iso ? String(iso).slice(0, 7) : null)
 function validity(memory) {
   const from = month(memory.validFrom)
   const until = month(memory.validUntil)
-  if (from && until) return `${from} → ${until}`
-  if (from) return `${from} → now`
-  if (until) return `until ${until}`
+  if (from && until) return t("validity.range", { from, until })
+  if (from) return t("validity.open", { from })
+  if (until) return t("validity.until", { until })
   return ""
 }
 
@@ -130,8 +130,8 @@ function memoryCard(memory, { actions = "" } = {}) {
               : ""
           }
           ${validity(memory) ? `<span>${esc(validity(memory))}</span>` : ""}
-          <span title="How sure the system is that this is true">confidence ${memory.confidence.toFixed(2)}</span>
-          ${memory.reinforcedCount > 0 ? `<span>observed ${memory.reinforcedCount}×</span>` : ""}
+          <span title="${esc(t("card.confidenceTitle"))}">${esc(t("card.confidence", { value: memory.confidence.toFixed(2) }))}</span>
+          ${memory.reinforcedCount > 0 ? `<span>${esc(t("card.observed", { count: memory.reinforcedCount }))}</span>` : ""}
         </div>
       </div>
       <div class="item__actions">${actions}</div>
@@ -142,15 +142,12 @@ function memoryCard(memory, { actions = "" } = {}) {
 function renderMemories() {
   const el = $("#memories-list")
   if (STATE.memories.length === 0) {
-    el.innerHTML = emptyState(
-      "Nothing here yet",
-      "Use the box above to write something worth remembering. Memories appear once the system has decided what is durable; transient remarks are deliberately dropped.",
-    )
+    el.innerHTML = emptyState(t("memories.empty.title"), t("memories.empty.body"))
     return
   }
   el.innerHTML = STATE.memories
     .map((m) =>
-      memoryCard(m, `<button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">Details</button>`),
+      memoryCard(m, `<button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">${esc(t("common.details"))}</button>`),
     )
     .join("")
 }
@@ -158,18 +155,15 @@ function renderMemories() {
 function renderPending() {
   const el = $("#pending-list")
   if (STATE.pending.length === 0) {
-    el.innerHTML = emptyState(
-      "Nothing needs review",
-      "Memories land here when they conflict with something already known, or when the writing agent is not trusted for that kind of memory.",
-    )
+    el.innerHTML = emptyState(t("pending.empty.title"), t("pending.empty.body"))
     return
   }
   el.innerHTML = STATE.pending
     .map((m) =>
       memoryCard(m, `
-        <button type="button" class="btn btn--sm btn--primary" data-action="confirm" data-id="${esc(m.id)}">Confirm</button>
-        <button type="button" class="btn btn--sm btn--danger" data-action="reject" data-id="${esc(m.id)}">Reject</button>
-        <button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">Details</button>
+        <button type="button" class="btn btn--sm btn--primary" data-action="confirm" data-id="${esc(m.id)}">${esc(t("common.confirm"))}</button>
+        <button type="button" class="btn btn--sm btn--danger" data-action="reject" data-id="${esc(m.id)}">${esc(t("common.reject"))}</button>
+        <button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">${esc(t("common.details"))}</button>
       `),
     )
     .join("")
@@ -180,12 +174,12 @@ async function renderTimeline() {
   setBusy(el, true)
   const { memories } = await api("/api/timeline")
   if (memories.length === 0) {
-    el.innerHTML = emptyState("No history yet", "Once memories are recorded, this shows when each was true — not when it was learned.")
+    el.innerHTML = emptyState(t("timeline.empty.title"), t("timeline.empty.body"))
     return
   }
   el.innerHTML = memories
     .map((m) =>
-      memoryCard(m, `<button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">Details</button>`),
+      memoryCard(m, `<button type="button" class="btn btn--sm" data-action="detail" data-id="${esc(m.id)}">${esc(t("common.details"))}</button>`),
     )
     .join("")
 }
@@ -194,10 +188,10 @@ function renderStats() {
   const s = STATE.stats
   if (!s) return
   $("#stat-strip").innerHTML = `
-    <span><b>${s.active}</b> current</span>
-    <span><b>${s.superseded}</b> no longer true</span>
-    <span><b>${s.observations}</b> notes</span>
-    <span><b>${s.entities}</b> entities</span>
+    <span><b>${s.active}</b> ${esc(t("stats.current"))}</span>
+    <span><b>${s.superseded}</b> ${esc(t("stats.superseded"))}</span>
+    <span><b>${s.observations}</b> ${esc(t("stats.notes"))}</span>
+    <span><b>${s.entities}</b> ${esc(t("stats.entities"))}</span>
   `
   $("#count-memories").textContent = String(s.active)
   const pendingCount = $("#count-pending")
@@ -246,44 +240,44 @@ async function openDetail(id) {
   $("#drawer-title").textContent = TYPE_LABEL[memory.type] ?? memory.type
   $("#drawer-body").innerHTML = `
     <div class="field">
-      <label for="detail-content">Statement</label>
+      <label for="detail-content">${esc(t("drawer.statement"))}</label>
       <textarea id="detail-content" rows="3">${esc(memory.content)}</textarea>
-      <p class="hint">Editing keeps the previous wording in history rather than overwriting it.</p>
+      <p class="hint">${esc(t("drawer.editHint"))}</p>
     </div>
 
     <div class="button-row" style="margin-bottom:var(--space-5)">
-      <button type="button" class="btn btn--primary btn--sm" data-action="save" data-id="${esc(memory.id)}">Save correction</button>
-      <button type="button" class="btn btn--sm" data-action="archive" data-id="${esc(memory.id)}">Archive</button>
-      <button type="button" class="btn btn--danger btn--sm" data-action="delete" data-id="${esc(memory.id)}">Delete permanently</button>
+      <button type="button" class="btn btn--primary btn--sm" data-action="save" data-id="${esc(memory.id)}">${esc(t("drawer.save"))}</button>
+      <button type="button" class="btn btn--sm" data-action="archive" data-id="${esc(memory.id)}">${esc(t("drawer.archive"))}</button>
+      <button type="button" class="btn btn--danger btn--sm" data-action="delete" data-id="${esc(memory.id)}">${esc(t("drawer.delete"))}</button>
     </div>
 
-    <h3>Provenance</h3>
+    <h3>${esc(t("drawer.provenance"))}</h3>
     <table class="data">
       <tbody>
-        <tr><th>Status</th><td>${esc(STATUS_LABEL[memory.status] ?? memory.status)}</td></tr>
-        <tr><th>True from</th><td>${esc(month(memory.validFrom) ?? "unknown")}</td></tr>
-        <tr><th>True until</th><td>${esc(month(memory.validUntil) ?? "still true")}</td></tr>
-        <tr><th>Recorded</th><td>${esc(month(memory.recordedAt) ?? "")}</td></tr>
-        <tr><th>Confidence</th><td class="num">${memory.confidence.toFixed(2)}</td></tr>
-        <tr><th>Importance</th><td class="num">${memory.importance.toFixed(2)}</td></tr>
-        <tr><th>Re-observed</th><td class="num">${memory.reinforcedCount}</td></tr>
-        ${memory.agentId ? `<tr><th>Written by</th><td>${esc(memory.agentId)}</td></tr>` : ""}
-        <tr><th>Id</th><td><code>${esc(memory.id)}</code></td></tr>
+        <tr><th>${esc(t("drawer.status"))}</th><td>${esc(statusLabel(memory.status))}</td></tr>
+        <tr><th>${esc(t("drawer.trueFrom"))}</th><td>${esc(month(memory.validFrom) ?? t("common.unknown"))}</td></tr>
+        <tr><th>${esc(t("drawer.trueUntil"))}</th><td>${esc(month(memory.validUntil) ?? t("common.stillTrue"))}</td></tr>
+        <tr><th>${esc(t("drawer.recorded"))}</th><td>${esc(month(memory.recordedAt) ?? "")}</td></tr>
+        <tr><th>${esc(t("drawer.confidence"))}</th><td class="num">${memory.confidence.toFixed(2)}</td></tr>
+        <tr><th>${esc(t("drawer.importance"))}</th><td class="num">${memory.importance.toFixed(2)}</td></tr>
+        <tr><th>${esc(t("drawer.reobserved"))}</th><td class="num">${memory.reinforcedCount}</td></tr>
+        ${memory.agentId ? `<tr><th>${esc(t("drawer.writtenBy"))}</th><td>${esc(memory.agentId)}</td></tr>` : ""}
+        <tr><th>${esc(t("drawer.id"))}</th><td><code>${esc(memory.id)}</code></td></tr>
       </tbody>
     </table>
 
-    <h3 style="margin-top:var(--space-5)">How this changed</h3>
+    <h3 style="margin-top:var(--space-5)">${esc(t("drawer.howChanged"))}</h3>
     ${
       history.length <= 1
-        ? '<p class="lede">No earlier versions — this is the only statement of this fact.</p>'
+        ? `<p class="lede">${esc(t("drawer.noEarlier"))}</p>`
         : `<ol class="chain">${history
             .map(
               (h) => `
           <li data-current="${h.id === memory.id}">
             <div>${esc(h.content)}</div>
             <div class="item__meta">
-              <span>${esc(validity(h) || "unknown period")}</span>
-              <span class="chip">${esc(STATUS_LABEL[h.status] ?? h.status)}</span>
+              <span>${esc(validity(h) || t("common.unknownPeriod"))}</span>
+              <span class="chip">${esc(statusLabel(h.status))}</span>
             </div>
           </li>`,
             )
@@ -311,9 +305,14 @@ function renderRecall(audit) {
   if (result.memories.length === 0) {
     el.innerHTML = `
       <div class="empty">
-        <h3>Nothing relevant was found</h3>
-        <p>This is a correct answer, not a failure. The agent is told to proceed without personal context rather than given a weak match.</p>
-        <p class="hint">${result.diagnostics.candidatesConsidered} candidate(s) were examined across ${result.diagnostics.routesUsed.length || 0} route(s).</p>
+        <h3>${esc(t("recall.empty.title"))}</h3>
+        <p>${esc(t("recall.empty.body"))}</p>
+        <p class="hint">${esc(
+          t("recall.empty.diagnostics", {
+            candidates: result.diagnostics.candidatesConsidered,
+            routes: result.diagnostics.routesUsed.length || 0,
+          }),
+        )}</p>
       </div>`
     return
   }
@@ -323,7 +322,7 @@ function renderRecall(audit) {
       (m) => `
       <tr>
         <td>${esc(m.memory.content)}</td>
-        <td>${esc(TYPE_LABEL[m.memory.type] ?? m.memory.type)}</td>
+        <td>${esc(typeLabel(m.memory.type))}</td>
         <td class="num">${m.score.toFixed(3)}</td>
         <td class="num">${(m.breakdown.rrf ?? 0).toFixed(3)}</td>
         <td class="num">${(m.breakdown.recency ?? 0).toFixed(2)}</td>
@@ -337,22 +336,22 @@ function renderRecall(audit) {
 
   el.innerHTML = `
     <div class="card">
-      <h3>What the agent would receive</h3>
+      <h3>${esc(t("recall.received"))}</h3>
       <pre class="context">${esc(result.context)}</pre>
       <div class="breakdown" style="margin-top:var(--space-3)">
-        <div><dt>path</dt><dd>${esc(result.mode)}${result.escalated ? " (escalated)" : ""}</dd></div>
-        <div><dt>latency</dt><dd>${result.diagnostics.latencyMs} ms</dd></div>
-        <div><dt>tokens</dt><dd>≈${result.diagnostics.estimatedTokens}</dd></div>
-        <div><dt>candidates</dt><dd>${result.diagnostics.candidatesConsidered}</dd></div>
-        <div><dt>filtered</dt><dd>${result.diagnostics.conflictsFiltered}</dd></div>
+        <div><dt>${esc(t("recall.metric.path"))}</dt><dd>${esc(result.mode)}${result.escalated ? esc(t("recall.escalated")) : ""}</dd></div>
+        <div><dt>${esc(t("recall.metric.latency"))}</dt><dd>${result.diagnostics.latencyMs} ms</dd></div>
+        <div><dt>${esc(t("recall.metric.tokens"))}</dt><dd>≈${result.diagnostics.estimatedTokens}</dd></div>
+        <div><dt>${esc(t("recall.metric.candidates"))}</dt><dd>${result.diagnostics.candidatesConsidered}</dd></div>
+        <div><dt>${esc(t("recall.metric.filtered"))}</dt><dd>${result.diagnostics.conflictsFiltered}</dd></div>
       </div>
     </div>
 
     <div class="card">
-      <h3>Why each memory was chosen</h3>
+      <h3>${esc(t("recall.why.title"))}</h3>
       <table class="data">
         <thead>
-          <tr><th>Memory</th><th>Type</th><th>Score</th><th>Fusion</th><th>Recency</th><th>Importance</th><th>Matched by</th></tr>
+          <tr><th>${esc(t("recall.table.memory"))}</th><th>${esc(t("recall.table.type"))}</th><th>${esc(t("recall.table.score"))}</th><th>${esc(t("recall.table.fusion"))}</th><th>${esc(t("recall.table.recency"))}</th><th>${esc(t("recall.table.importance"))}</th><th>${esc(t("recall.table.matchedBy"))}</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
@@ -361,9 +360,9 @@ function renderRecall(audit) {
     ${
       dropped.length > 0
         ? `<div class="card">
-             <h3>What was filtered out</h3>
+             <h3>${esc(t("recall.filtered.title"))}</h3>
              <table class="data">
-               <thead><tr><th>Reason</th><th class="num">Count</th></tr></thead>
+               <thead><tr><th>${esc(t("recall.filtered.reason"))}</th><th class="num">${esc(t("recall.filtered.count"))}</th></tr></thead>
                <tbody>${Object.entries(
                  dropped.reduce((acc, d) => ({ ...acc, [d.reason]: (acc[d.reason] ?? 0) + 1 }), {}),
                )
@@ -385,16 +384,16 @@ const ACTIONS = {
 
   async save(id) {
     const content = $("#detail-content").value.trim()
-    if (!content) return toast("A memory cannot be empty", "error")
+    if (!content) return toast(t("error.emptyMemory"), "error")
     await api(`/api/memories/${id}`, { method: "PATCH", body: JSON.stringify({ content }) })
-    toast("Correction saved; the previous wording is in history")
+    toast(t("toast.correctionSaved"))
     closeDrawer()
     await refresh()
   },
 
   async archive(id) {
     await api(`/api/memories/${id}`, { method: "DELETE" })
-    toast("Archived — still in history, no longer used for recall")
+    toast(t("toast.archived"))
     closeDrawer()
     await refresh()
   },
@@ -402,24 +401,24 @@ const ACTIONS = {
   async delete(id) {
     // Destructive and irreversible: confirm, and say exactly what will happen.
     const ok = window.confirm(
-      "Permanently delete this memory?\n\nIt will be removed from the database and cannot be recovered. Archive instead if you only want it ignored.",
+      t("confirm.delete"),
     )
     if (!ok) return
     await api(`/api/memories/${id}?hard=true`, { method: "DELETE" })
-    toast("Deleted permanently")
+    toast(t("toast.deleted"))
     closeDrawer()
     await refresh()
   },
 
   async confirm(id) {
     await api(`/api/pending/${id}/confirm`, { method: "POST" })
-    toast("Confirmed — it can now be recalled")
+    toast(t("toast.confirmed"))
     await refresh()
   },
 
   async reject(id) {
     await api(`/api/pending/${id}/reject`, { method: "POST", body: JSON.stringify({}) })
-    toast("Rejected — archived, not deleted")
+    toast(t("toast.rejected"))
     await refresh()
   },
 }
@@ -451,18 +450,18 @@ async function loadPolicies() {
   const { policies } = await api("/api/policies")
   const el = $("#policies-list")
   if (policies.length === 0) {
-    el.innerHTML = '<p class="lede">No agent has written yet. Defaults apply: facts, preferences and goals are accepted; decisions need your confirmation.</p>'
+    el.innerHTML = `<p class="lede">${esc(t("policies.empty"))}</p>`
     return
   }
   el.innerHTML = `<table class="data">
-    <thead><tr><th>Agent</th><th>Auto-accepted</th><th>Needs review</th><th class="num">Can write</th></tr></thead>
+    <thead><tr><th>${esc(t("policies.agent"))}</th><th>${esc(t("policies.autoAccepted"))}</th><th>${esc(t("policies.needsReview"))}</th><th class="num">${esc(t("policies.canWrite"))}</th></tr></thead>
     <tbody>${policies
       .map(
         (p) => `<tr>
           <td><code>${esc(p.agentId)}</code></td>
-          <td>${esc((p.allowedTypes ?? []).map((t) => TYPE_LABEL[t] ?? t).join(", ") || "—")}</td>
-          <td>${esc((p.requireConfirmationFor ?? []).map((t) => TYPE_LABEL[t] ?? t).join(", ") || "—")}</td>
-          <td class="num">${p.canWrite ? "yes" : "no"}</td>
+          <td>${esc((p.allowedTypes ?? []).map((x) => typeLabel(x)).join(", ") || "—")}</td>
+          <td>${esc((p.requireConfirmationFor ?? []).map((x) => typeLabel(x)).join(", ") || "—")}</td>
+          <td class="num">${esc(p.canWrite ? t("common.yes") : t("common.no"))}</td>
         </tr>`,
       )
       .join("")}</tbody>
@@ -478,7 +477,7 @@ const PRIOR_ART_CHIP = {
   rejected: "",
 }
 
-const EVIDENCE_LABEL = { path: "file", case: "case", commit: "commit" }
+// Evidence chips resolve through the dictionary, same as the type chips.
 
 /**
  * Parse the evidence box: one reference per line.
@@ -502,8 +501,7 @@ function parseEvidence(text) {
 function renderPriorArt(entries) {
   const el = $("#priorart-list")
   if (entries.length === 0) {
-    el.innerHTML =
-      '<p class="empty">No projects recorded yet. Add one above — including the ones you decided against, which are the most useful entries here.</p>'
+    el.innerHTML = `<p class="empty">${esc(t("priorart.empty"))}</p>`
     return
   }
   el.innerHTML = `<div class="list">${entries.map(renderPriorArtEntry).join("")}</div>`
@@ -514,34 +512,32 @@ function renderPriorArtEntry(entry) {
     ? `<ul class="evidence">${entry.evidence
         .map(
           (e) => `<li>
-            <span class="chip ${e.resolved ? "chip--ok" : "chip--danger"}">${esc(
-              EVIDENCE_LABEL[e.kind] ?? e.kind,
-            )}</span>
+            <span class="chip ${e.resolved ? "chip--ok" : "chip--danger"}">${esc(evidenceLabel(e.kind))}</span>
             <code>${esc(e.detail ?? e.ref)}</code>
             ${e.problem ? `<span class="hint"> — ${esc(e.problem)}</span>` : ""}
           </li>`,
         )
         .join("")}</ul>`
-    : '<p class="hint">No evidence recorded. A claim of this kind has nothing behind it.</p>'
+    : `<p class="hint">${esc(t("priorart.noEvidence"))}</p>`
 
   return `<article class="item">
     <div class="item__main">
       <div class="item__meta">
-        <span class="chip ${PRIOR_ART_CHIP[entry.status] ?? ""}">${esc(entry.status)}</span>
+        <span class="chip ${PRIOR_ART_CHIP[entry.status] ?? ""}">${esc(priorStatusLabel(entry.status))}</span>
         <a href="${esc(entry.url)}" target="_blank" rel="noreferrer noopener">${esc(entry.repo)}</a>
-        <span class="hint">added ${esc(entry.addedAt.slice(0, 10))} · reviewed ${esc(
-          entry.reviewedAt.slice(0, 10),
+        <span class="hint">${esc(t("priorart.added", { date: entry.addedAt.slice(0, 10) }))} · ${esc(
+          t("priorart.reviewed", { date: entry.reviewedAt.slice(0, 10) }),
         )}</span>
       </div>
       <div class="item__content">
         <strong>${esc(entry.title)}</strong>
         <p>${esc(entry.claim)}</p>
         <p>${esc(entry.rationale)}</p>
-        ${entry.notTaken ? `<p><em>Not taken:</em> ${esc(entry.notTaken)}</p>` : ""}
-        ${entry.killCriterion ? `<p><em>Kill criterion:</em> ${esc(entry.killCriterion)}</p>` : ""}
+        ${entry.notTaken ? `<p><em>${esc(t("priorart.notTaken"))}</em> ${esc(entry.notTaken)}</p>` : ""}
+        ${entry.killCriterion ? `<p><em>${esc(t("priorart.kill"))}</em> ${esc(entry.killCriterion)}</p>` : ""}
         ${
           entry.unbacked
-            ? `<p class="hint">Marked <em>${esc(entry.status)}</em> but no reference resolves — this claim is unbacked.</p>`
+            ? `<p class="hint">${esc(t("priorart.unbacked", { status: priorStatusLabel(entry.status) }))}</p>`
             : ""
         }
         ${evidence}
@@ -575,21 +571,43 @@ async function addPriorArt(form) {
     }),
   })
   form.reset()
-  toast("Project added")
+  toast(t("toast.priorArtAdded"))
   await loadPriorArt()
 }
 
 async function removePriorArt(id) {
   const entry = (STATE.priorArt ?? []).find((e) => e.id === id)
   const ok = window.confirm(
-    `Remove ${entry?.repo ?? "this project"} from the reference list?\n\nThis only removes the entry — nothing in the repository changes.`,
+    t("confirm.removePriorArt", { repo: entry?.repo ?? "?" }),
   )
   if (!ok) return
   // Force rather than archive: a reference list has no history worth keeping, and
   // the entry is one `git` command away from being re-added.
   await api(`/api/prior-art/${id}`, { method: "DELETE" })
-  toast("Removed")
+  toast(t("toast.priorArtRemoved"))
   await loadPriorArt()
+}
+
+/**
+ * Language. Next to the theme toggle because they are the same kind of thing: a
+ * display preference the user chose, remembered locally, applied to static markup.
+ */
+function initLang() {
+  setLang(initialLang(localStorage))
+  $("#lang-toggle").addEventListener("click", () => {
+    const next = currentLang() === "zh" ? "en" : "zh"
+    localStorage.setItem("mp-lang", next)
+    setLang(next)
+    // Re-render what was built from data. Anything holding user input — the open
+    // drawer, text typed but not sent — is deliberately left alone, because
+    // changing language should not discard work in progress.
+    renderStats()
+    renderMemories()
+    renderPending()
+    if (STATE.view === "timeline") renderTimeline().catch(reportError)
+    if (STATE.view === "priorart") loadPriorArt().catch(reportError)
+    if (STATE.view === "settings") loadPolicies().catch(reportError)
+  })
 }
 
 function initTheme() {
@@ -606,6 +624,7 @@ function initTheme() {
 }
 
 function init() {
+  initLang()
   initTheme()
 
   // Tabs
@@ -632,18 +651,18 @@ function init() {
     if (!content) return
     const button = $("#remember-submit")
     button.disabled = true
-    button.textContent = "Working…"
+    button.textContent = t("composer.working")
     try {
       const outcome = await api("/api/remember", {
         method: "POST",
         body: JSON.stringify({ content, sourceKind: "user" }),
       })
       if (outcome.deferred) {
-        toast("Saved, but extraction failed — nothing was lost, it can be reprocessed", "error")
+        toast(t("toast.extractionFailed"), "error")
       } else if (outcome.memories.length === 0) {
-        toast("Reviewed — nothing here looked worth keeping long term")
+        toast(t("toast.reviewed"))
       } else {
-        toast(`Remembered ${outcome.memories.length} item(s)`)
+        toast(t("toast.remembered", { count: outcome.memories.length }))
       }
       input.value = ""
       await refresh()
@@ -652,7 +671,7 @@ function init() {
       reportError(error)
     } finally {
       button.disabled = false
-      button.textContent = "Remember"
+      button.textContent = t("composer.submit")
     }
   })
 
@@ -713,7 +732,7 @@ function init() {
     const file = fileInput.files?.[0]
     if (!file) return
     const ok = window.confirm(
-      "Replace ALL stored data with this backup?\n\nEverything currently in the database will be deleted first. This cannot be undone.",
+      t("confirm.import"),
     )
     if (!ok) return
     try {
@@ -722,7 +741,7 @@ function init() {
         method: "POST",
         body: JSON.stringify(bundle),
       })
-      toast(`Restored ${result.memories} memories and ${result.observations} notes`)
+      toast(t("toast.restored", { memories: result.memories, observations: result.observations }))
       fileInput.value = ""
       importBtn.disabled = true
       await refresh()
@@ -734,12 +753,12 @@ function init() {
   // Settings: erase
   $("#erase-btn").addEventListener("click", async () => {
     const ok = window.confirm(
-      "Permanently erase everything?\n\nEvery memory, note and entity will be deleted. Export first if you might want any of it.",
+      t("confirm.erase"),
     )
     if (!ok) return
     try {
       await api("/api/erase?confirm=ERASE", { method: "POST" })
-      toast("All data erased")
+      toast(t("toast.erased"))
       await refresh()
     } catch (error) {
       reportError(error)

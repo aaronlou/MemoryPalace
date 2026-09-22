@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,6 +7,7 @@
     <title>Memory Palace</title>
     <meta
       name="description"
+      data-i18n-content="meta.description"
       content="Inspect, correct and export the long-term memory this system holds about you."
     />
     <link rel="stylesheet" href="/styles.css" />
@@ -16,7 +17,7 @@
     />
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main" data-i18n="a11y.skipToContent">Skip to content</a>
 
     <header class="topbar">
       <div class="topbar__brand">
@@ -35,7 +36,22 @@
 
       <div class="topbar__actions">
         <div class="stat-strip" id="stat-strip" aria-live="polite" aria-atomic="true"></div>
-        <button type="button" class="btn btn--ghost" id="theme-toggle" aria-label="Switch colour theme">
+        <button
+          type="button"
+          class="btn btn--ghost"
+          id="lang-toggle"
+          data-i18n-aria-label="lang.toggle"
+          aria-label="Switch language"
+        >
+          <span data-i18n="lang.other">中文</span>
+        </button>
+        <button
+          type="button"
+          class="btn btn--ghost"
+          id="theme-toggle"
+          data-i18n-aria-label="theme.toggle"
+          aria-label="Switch colour theme"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="icon">
             <path
               d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"
@@ -49,75 +65,96 @@
       </div>
     </header>
 
-    <nav class="tabs" aria-label="Sections">
+    <nav class="tabs" data-i18n-aria-label="nav.label" aria-label="Sections">
       <button type="button" class="tab" data-view="memories" aria-current="page">
-        Memories <span class="count" id="count-memories"></span>
+        <span data-i18n="nav.memories">Memories</span>
+        <span class="count" id="count-memories"></span>
       </button>
       <button type="button" class="tab" data-view="pending">
-        Needs review <span class="count" id="count-pending"></span>
+        <span data-i18n="nav.pending">Needs review</span>
+        <span class="count" id="count-pending"></span>
       </button>
-      <button type="button" class="tab" data-view="timeline">Timeline</button>
-      <button type="button" class="tab" data-view="recall">Recall test</button>
-      <button type="button" class="tab" data-view="priorart">Prior art</button>
-      <button type="button" class="tab" data-view="settings">Settings</button>
+      <button type="button" class="tab" data-view="timeline" data-i18n="nav.timeline">
+        Timeline
+      </button>
+      <button type="button" class="tab" data-view="recall" data-i18n="nav.recall">
+        Recall test
+      </button>
+      <button type="button" class="tab" data-view="priorart" data-i18n="nav.priorart">
+        Prior art
+      </button>
+      <button type="button" class="tab" data-view="settings" data-i18n="nav.settings">
+        Settings
+      </button>
     </nav>
 
     <main id="main" tabindex="-1">
       <!-- Memories -->
       <section class="view" id="view-memories" aria-labelledby="h-memories">
-        <h2 class="sr-only" id="h-memories">Stored memories</h2>
+        <h2 class="sr-only" id="h-memories" data-i18n="memories.heading">Stored memories</h2>
 
         <form class="toolbar" id="filter-form" role="search">
           <div class="field field--grow">
-            <label for="search-q">Search</label>
+            <label for="search-q" data-i18n="memories.search.label">Search</label>
             <input
               type="search"
               id="search-q"
               name="q"
+              data-i18n-placeholder="memories.search.placeholder"
               placeholder="Search wording, e.g. Effect-TS"
               autocomplete="off"
             />
           </div>
           <div class="field">
-            <label for="filter-type">Type</label>
+            <label for="filter-type" data-i18n="memories.filter.type">Type</label>
             <select id="filter-type" name="types">
-              <option value="">All types</option>
-              <option value="goal">Goal</option>
-              <option value="preference">Preference</option>
-              <option value="fact">Fact</option>
-              <option value="decision">Decision</option>
-              <option value="relationship">Relationship</option>
-              <option value="experience">Experience</option>
-              <option value="event">Event</option>
+              <option value="" data-i18n="memories.filter.allTypes">All types</option>
+              <option value="goal" data-i18n="type.goal">Goal</option>
+              <option value="preference" data-i18n="type.preference">Preference</option>
+              <option value="fact" data-i18n="type.fact">Fact</option>
+              <option value="decision" data-i18n="type.decision">Decision</option>
+              <option value="relationship" data-i18n="type.relationship">Relationship</option>
+              <option value="experience" data-i18n="type.experience">Experience</option>
+              <option value="event" data-i18n="type.event">Event</option>
             </select>
           </div>
           <div class="field">
-            <label for="filter-status">Status</label>
+            <label for="filter-status" data-i18n="memories.filter.status">Status</label>
             <select id="filter-status" name="statuses">
-              <option value="active">Active</option>
-              <option value="">Everything</option>
-              <option value="superseded">Superseded</option>
-              <option value="archived">Archived</option>
-              <option value="pending">Awaiting review</option>
+              <option value="active" data-i18n="memories.filter.active">Active</option>
+              <option value="" data-i18n="memories.filter.everything">Everything</option>
+              <option value="superseded" data-i18n="memories.filter.superseded">Superseded</option>
+              <option value="archived" data-i18n="memories.filter.archived">Archived</option>
+              <option value="pending" data-i18n="memories.filter.pending">Awaiting review</option>
             </select>
           </div>
         </form>
 
         <form class="composer" id="remember-form">
           <div class="field field--grow">
-            <label for="remember-input">Tell it something worth remembering</label>
+            <label for="remember-input" data-i18n="composer.label">
+              Tell it something worth remembering
+            </label>
             <textarea
               id="remember-input"
               name="content"
               rows="2"
+              data-i18n-placeholder="composer.placeholder"
               placeholder="Write it however you would say it — the system decides what is worth keeping."
               required
             ></textarea>
-            <p class="hint">
+            <p class="hint" data-i18n="composer.hint">
               Stored verbatim first, then turned into memories. A model outage cannot lose this.
             </p>
           </div>
-          <button type="submit" class="btn btn--primary" id="remember-submit">Remember</button>
+          <button
+            type="submit"
+            class="btn btn--primary"
+            id="remember-submit"
+            data-i18n="composer.submit"
+          >
+            Remember
+          </button>
         </form>
 
         <div id="memories-list" class="list" aria-busy="false"></div>
@@ -125,19 +162,19 @@
 
       <!-- Pending -->
       <section class="view" id="view-pending" hidden aria-labelledby="h-pending">
-        <h2 id="h-pending">Needs review</h2>
-        <p class="lede">
+        <h2 id="h-pending" data-i18n="pending.heading">Needs review</h2>
+        <p class="lede" data-i18n="pending.lede">
           These were not stored automatically — either they conflict with something already known,
-          or the agent that wrote them is not trusted for that kind of memory. Confirm only what
-          you agree with.
+          or the agent that wrote them is not trusted for that kind of memory. Confirm only what you
+          agree with.
         </p>
         <div id="pending-list" class="list" aria-busy="false"></div>
       </section>
 
       <!-- Timeline -->
       <section class="view" id="view-timeline" hidden aria-labelledby="h-timeline">
-        <h2 id="h-timeline">Timeline</h2>
-        <p class="lede">
+        <h2 id="h-timeline" data-i18n="timeline.heading">Timeline</h2>
+        <p class="lede" data-i18n="timeline.lede">
           When each memory was true, not when it was learned. Struck-through entries are no longer
           current but are kept so changes stay traceable.
         </p>
@@ -146,66 +183,93 @@
 
       <!-- Recall test -->
       <section class="view" id="view-recall" hidden aria-labelledby="h-recall">
-        <h2 id="h-recall">Recall test</h2>
-        <p class="lede">
+        <h2 id="h-recall" data-i18n="recall.heading">Recall test</h2>
+        <p class="lede" data-i18n="recall.lede">
           Ask what an agent would ask, and see exactly what would be handed to it — including why
           each memory was chosen and what was filtered out.
         </p>
         <form class="toolbar" id="recall-form">
           <div class="field field--grow">
-            <label for="recall-q">Question an agent would ask</label>
-            <input type="search" id="recall-q" name="query" required placeholder="e.g. Effect-TS 的 Context.Service 怎么理解？" />
+            <label for="recall-q" data-i18n="recall.question.label">
+              Question an agent would ask
+            </label>
+            <input
+              type="search"
+              id="recall-q"
+              name="query"
+              required
+              data-i18n-placeholder="recall.question.placeholder"
+              placeholder="e.g. Effect-TS 的 Context.Service 怎么理解？"
+            />
           </div>
           <div class="field">
-            <label for="recall-mode">Path</label>
+            <label for="recall-mode" data-i18n="recall.mode.label">Path</label>
             <select id="recall-mode" name="mode">
-              <option value="auto">auto</option>
-              <option value="fast">fast (no model call)</option>
-              <option value="smart">smart (understands + reranks)</option>
+              <option value="auto" data-i18n="recall.mode.auto">auto</option>
+              <option value="fast" data-i18n="recall.mode.fast">fast (no model call)</option>
+              <option value="smart" data-i18n="recall.mode.smart">
+                smart (understands + reranks)
+              </option>
             </select>
           </div>
           <div class="field field--check">
             <input type="checkbox" id="recall-history" name="includeHistory" />
-            <label for="recall-history">Include no-longer-true memories</label>
+            <label for="recall-history" data-i18n="recall.history">
+              Include no-longer-true memories
+            </label>
           </div>
-          <button type="submit" class="btn btn--primary">Run recall</button>
+          <button type="submit" class="btn btn--primary" data-i18n="recall.run">Run recall</button>
         </form>
         <div id="recall-result" class="recall-result"></div>
       </section>
 
       <!-- Settings -->
       <section class="view" id="view-settings" hidden aria-labelledby="h-settings">
-        <h2 id="h-settings">Settings and data</h2>
+        <h2 id="h-settings" data-i18n="settings.heading">Settings and data</h2>
 
         <div class="card">
-          <h3>Your data is yours</h3>
-          <p class="lede">
+          <h3 data-i18n="settings.data.title">Your data is yours</h3>
+          <p class="lede" data-i18n="settings.data.lede">
             Export in a format you can read, or in one you can restore. Deleting is real deletion,
             not a flag.
           </p>
           <div class="button-row">
-            <a class="btn" href="/api/export?format=markdown" download>Download readable (Markdown)</a>
-            <a class="btn" href="/api/export?format=json&embeddings=true" download>Download full backup (JSON)</a>
+            <a class="btn" href="/api/export?format=markdown" download data-i18n="settings.export.markdown"
+              >Download readable (Markdown)</a
+            >
+            <a
+              class="btn"
+              href="/api/export?format=json&embeddings=true"
+              download
+              data-i18n="settings.export.json"
+              >Download full backup (JSON)</a
+            >
           </div>
         </div>
 
         <div class="card">
-          <h3>Restore from a backup</h3>
-          <p class="lede">
+          <h3 data-i18n="settings.import.title">Restore from a backup</h3>
+          <p class="lede" data-i18n="settings.import.lede">
             Replaces everything currently stored. The file must be a Memory Palace JSON export.
           </p>
           <div class="field">
-            <label for="import-file">Backup file</label>
+            <label for="import-file" data-i18n="settings.import.file">Backup file</label>
             <input type="file" id="import-file" accept="application/json,.json" />
           </div>
-          <button type="button" class="btn btn--danger" id="import-btn" disabled>
+          <button
+            type="button"
+            class="btn btn--danger"
+            id="import-btn"
+            disabled
+            data-i18n="settings.import.submit"
+          >
             Replace all data from this file
           </button>
         </div>
 
         <div class="card">
-          <h3>Agent write permissions</h3>
-          <p class="lede">
+          <h3 data-i18n="settings.policies.title">Agent write permissions</h3>
+          <p class="lede" data-i18n="settings.policies.lede">
             Agents may record what you tell them, but a memory awaiting review is never presented
             as fact.
           </p>
@@ -213,75 +277,122 @@
         </div>
 
         <div class="card card--danger">
-          <h3>Erase everything</h3>
-          <p class="lede">Permanently deletes every memory, observation and entity. This cannot be undone.</p>
-          <button type="button" class="btn btn--danger" id="erase-btn">Erase all data</button>
+          <h3 data-i18n="settings.erase.title">Erase everything</h3>
+          <p class="lede" data-i18n="settings.erase.lede">
+            Permanently deletes every memory, observation and entity. This cannot be undone.
+          </p>
+          <button type="button" class="btn btn--danger" id="erase-btn" data-i18n="settings.erase.submit">
+            Erase all data
+          </button>
         </div>
       </section>
 
       <!-- Prior art -->
       <section class="view" id="view-priorart" hidden aria-labelledby="h-priorart">
-        <h2 id="h-priorart">Prior art</h2>
-        <p class="lede">
-          The projects we read, and what we took from them — including what we deliberately did
-          not. An entry marked <em>adopted</em> or <em>partial</em> has to point at something in
-          this repository. Every reference is checked against the checkout when it is saved and
-          again when this page loads, so a claim whose file, case or commit has since moved is
-          shown as broken rather than left looking authoritative.
+        <h2 id="h-priorart" data-i18n="priorart.heading">Prior art</h2>
+        <p class="lede" data-i18n="priorart.lede">
+          The projects we read, and what we took from them — including what we deliberately did not.
+          An entry marked adopted or partial has to point at something in this repository. Every
+          reference is checked against the checkout when it is saved and again when this page loads,
+          so a claim whose file, case or commit has since moved is shown as broken rather than left
+          looking authoritative.
         </p>
 
         <div class="card">
-          <h3>Add a project</h3>
+          <h3 data-i18n="priorart.add.title">Add a project</h3>
           <form id="priorart-form">
             <div class="toolbar">
               <div class="field field--grow">
-                <label for="pa-repo">GitHub repo</label>
+                <label for="pa-repo" data-i18n="priorart.field.repo">GitHub repo</label>
                 <input id="pa-repo" name="repo" placeholder="owner/name" required />
               </div>
               <div class="field">
-                <label for="pa-status">Status</label>
+                <label for="pa-status" data-i18n="priorart.field.status">Status</label>
                 <select id="pa-status" name="status">
-                  <option value="watched">watched</option>
-                  <option value="partial">partial</option>
-                  <option value="adopted">adopted</option>
-                  <option value="rejected">rejected</option>
+                  <option value="watched" data-i18n="priorStatus.watched">watched</option>
+                  <option value="partial" data-i18n="priorStatus.partial">partial</option>
+                  <option value="adopted" data-i18n="priorStatus.adopted">adopted</option>
+                  <option value="rejected" data-i18n="priorStatus.rejected">rejected</option>
                 </select>
               </div>
             </div>
 
             <div class="field">
-              <label for="pa-title">Title</label>
-              <input id="pa-title" name="title" placeholder="Trigger-augmented graph memory" required />
+              <label for="pa-title" data-i18n="priorart.field.title">Title</label>
+              <input
+                id="pa-title"
+                name="title"
+                data-i18n-placeholder="priorart.placeholder.title"
+                placeholder="Trigger-augmented graph memory"
+                required
+              />
             </div>
 
             <div class="field">
-              <label for="pa-claim">What it claims</label>
-              <textarea id="pa-claim" name="claim" rows="2" required
-                placeholder="Recall is reachability-bounded by query/memory similarity, so systems miss associative recall."></textarea>
+              <label for="pa-claim" data-i18n="priorart.field.claim">What it claims</label>
+              <textarea
+                id="pa-claim"
+                name="claim"
+                rows="2"
+                required
+                data-i18n-placeholder="priorart.placeholder.claim"
+                placeholder="Recall is reachability-bounded by query/memory similarity, so systems miss associative recall."
+              ></textarea>
             </div>
 
             <div class="field">
-              <label for="pa-rationale">Assessment</label>
-              <textarea id="pa-rationale" name="rationale" rows="2" required
-                placeholder="Why it is or is not combinable with this product."></textarea>
+              <label for="pa-rationale" data-i18n="priorart.field.rationale">Assessment</label>
+              <textarea
+                id="pa-rationale"
+                name="rationale"
+                rows="2"
+                required
+                data-i18n-placeholder="priorart.placeholder.rationale"
+                placeholder="Why it is or is not combinable with this product."
+              ></textarea>
             </div>
 
             <div class="field">
-              <label for="pa-nottaken">What we did not take <span class="hint">(optional, and the most useful field)</span></label>
+              <label for="pa-nottaken"
+                ><span data-i18n="priorart.field.notTaken">What we did not take</span>
+                <span class="hint" data-i18n="priorart.field.notTakenHint"
+                  >(optional, and the most useful field)</span
+                ></label
+              >
               <textarea id="pa-nottaken" name="notTaken" rows="2"></textarea>
             </div>
 
             <div class="field">
-              <label for="pa-kill">Kill criterion <span class="hint">(required for watched)</span></label>
-              <textarea id="pa-kill" name="killCriterion" rows="2"
-                placeholder="What result would make us build it."></textarea>
+              <label for="pa-kill"
+                ><span data-i18n="priorart.field.kill">Kill criterion</span>
+                <span class="hint" data-i18n="priorart.field.killHint"
+                  >(required for watched)</span
+                ></label
+              >
+              <textarea
+                id="pa-kill"
+                name="killCriterion"
+                rows="2"
+                data-i18n-placeholder="priorart.placeholder.kill"
+                placeholder="What result would make us build it."
+              ></textarea>
             </div>
 
             <div class="field">
-              <label for="pa-evidence">Evidence <span class="hint">(one reference per line)</span></label>
-              <textarea id="pa-evidence" name="evidence" rows="3"
-                placeholder="docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md&#10;packages/core/src/recall/pipeline.ts:317&#10;case:rec-017"></textarea>
-              <p class="hint">
+              <label for="pa-evidence"
+                ><span data-i18n="priorart.field.evidence">Evidence</span>
+                <span class="hint" data-i18n="priorart.field.evidenceHint"
+                  >(one reference per line)</span
+                ></label
+              >
+              <textarea
+                id="pa-evidence"
+                name="evidence"
+                rows="3"
+                data-i18n-placeholder="priorart.placeholder.evidence"
+                placeholder="docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md&#10;packages/core/src/recall/pipeline.ts:317&#10;case:rec-017"
+              ></textarea>
+              <p class="hint" data-i18n-html="priorart.evidence.help">
                 A path, optionally with a line anchor (<code>file.ts:317</code> or
                 <code>file.ts#L317</code>); <code>case:rec-017</code> for a golden-dataset case;
                 <code>commit:abc1234</code> for the commit that adopted the idea.
@@ -289,7 +400,9 @@
             </div>
 
             <div class="button-row">
-              <button class="btn btn--primary" type="submit">Add project</button>
+              <button class="btn btn--primary" type="submit" data-i18n="priorart.add.submit">
+                Add project
+              </button>
             </div>
           </form>
         </div>
@@ -309,8 +422,14 @@
       aria-labelledby="drawer-title"
     >
       <header class="drawer__head">
-        <h2 id="drawer-title">Memory</h2>
-        <button type="button" class="btn btn--ghost" id="drawer-close" aria-label="Close details">
+        <h2 id="drawer-title" data-i18n="recall.table.memory">Memory</h2>
+        <button
+          type="button"
+          class="btn btn--ghost"
+          id="drawer-close"
+          data-i18n-aria-label="drawer.close"
+          aria-label="Close details"
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="icon">
             <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
           </svg>
