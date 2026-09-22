@@ -11,9 +11,11 @@ be.
 > Status: v0.1, working end to end. 181 tests green. The mock providers let the
 > whole system — including the evaluation suite — run with no API key and no
 > network. Cold start from an empty directory takes about 90 seconds, of which
-> most is dependency installation. CI runs lint, migrations, the build, the whole
-> suite and the walkthrough twice on every push, on mock providers, so it costs
-> nothing.
+> most is dependency installation. CI runs lint, the build, the whole suite and
+> the walkthrough three times on every push — twice in a row, because the second
+> pass re-ingests text the first already stored, then once more with every build
+> artifact deleted, to prove the documented entry path works from a fresh clone.
+> All of it on mock providers, so it costs nothing.
 
 ---
 
@@ -234,25 +236,29 @@ something.
 
 | Provider / embedder | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
 |---|---|---|---|---|
-| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.857 | 100% |
-| `null` — stores nothing | **0.000** | 10% | 0.714 / 0.786 | 100% |
-| `mock` — rule-based, no API key | 0.750 | 30% | 0.750 / 0.857 | 100% |
+| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.714 / 0.786 | 100% |
+| `null` — extracts nothing | **0.000** | 10% | — see note | — see note |
+| `mock` — rule-based, no API key | 0.750 | 30% | 0.714 / 0.786 | 100% |
 | DeepSeek + **bge-m3**, `smart` | 0.967 | 100% | 0.929 / 1.000 | 100% |
 | DeepSeek + **bge-m3**, `auto` | — | — | 0.893 / 1.000 | 100% |
 | DeepSeek + **embeddinggemma**, `smart` | **0.989** | 0.967 | 0.857 / 0.929 | 100% |
 | DeepSeek + **embeddinggemma**, `auto` | 0.899 | 0.933 | 0.821 / 0.929 | 100% |
 | DeepSeek + **embeddinggemma**, `fast` | — | — | 0.714 / 0.786 | 100% |
 
-**Every row names its embedder, because the embedder decides recall.** The bge-m3
-rows were measured when that model was installed; the embeddinggemma rows were
-re-measured afterwards with `--repeat 3` and are reproducible on a machine that
-has `embeddinggemma` (621 MB) rather than `bge-m3` (1.2 GB). The gap between them
-— P@5 0.929 versus 0.857, R@5 1.000 versus 0.929 — is what the stronger retrieval
-model buys, and it is the whole reason to prefer it.
+**Every row names its embedder, because the embedder decides recall.** The three
+offline rows are all `fast`, the default path. The bge-m3 rows were measured when
+that model was installed; the embeddinggemma rows were re-measured afterwards and
+are reproducible on a machine that has `embeddinggemma` (621 MB) rather than
+`bge-m3` (1.2 GB). The gap between them — P@5 0.929 versus 0.857, R@5 1.000 versus
+0.929 — is what the stronger retrieval model buys, and it is the whole reason to
+prefer it.
 
-`fast` agrees exactly across both embedders (0.714 / 0.786), which is expected:
-that path applies no reranker, so its recall is dominated by the lexical and
-entity routes rather than by semantic similarity.
+`fast` gives 0.714 / 0.786 on **every** embedder — `bge-m3`, `embeddinggemma`, and
+both offline stand-ins — which is the expected fingerprint of a path that applies
+no reranker: its recall comes from the lexical and entity routes, not from semantic
+similarity, so the embedding model has nothing to contribute. It is also the
+cleanest evidence that the reranker, not the embedder alone, is what the `smart`
+rows are buying.
 
 Reports now record the embedding model, its width and the recall path in their
 fingerprint, and `eval:compare` refuses to call two runs comparable when any of
@@ -260,21 +266,43 @@ those differ. Before that fix a report could not be attributed to an embedder at
 all — which is how a baseline came to be published against a model that was no
 longer installed.
 
-The oracle and null runs are asserted in the test suite: if a perfect model does
-not score 1.0 and an empty one 0.0, then a real score like "F1 = 0.75" is
-measuring the harness rather than the system.
+The offline rows are asserted in the test suite. The oracle must reach 1.000 on
+extraction and 100% on both adjudication and negative filtering, and `null` must
+reach 0.000 on extraction — if a perfect model does not score 1.0 and an empty one
+0.0, then a real score like "F1 = 0.75" is measuring the harness rather than the
+system. The offline recall figures are pinned to the command that prints them, so
+this table cannot drift away from them again.
 
-**Four honest notes about this table.**
+**Seven honest notes about this table.**
 
-*The offline recall numbers moved in two directions at once, and both are
-explained.* The generator moved them **down**: the recall suite gained `rec-013`,
-a hard paraphrase the offline stack **structurally cannot pass**, because a
-hashing embedder has no notion of a paraphrase. `rec-014` is the matching guard —
-a negative the offline stack does pass. Then the implementation moved them **up**:
-`includeHistory` no longer clamps the validity window to now (see below), which
-fixed `rec-010`, a case that had been failing since the suite was written. Net,
-`mock` and `oracle` went from 0.750 / 0.833 to **0.750 / 0.857** — the dataset got
-one case harder and the system got one case better.
+*`null`'s recall column is blank on purpose, not because it scored well.*
+`NullEmbedding` returns all-zero vectors, and cosine distance between two zero
+vectors is undefined — so pgvector's ordering over them is arbitrary, and the
+semantic route returns whatever it likes. That provider calibrates the *extraction*
+metric, where 0.000 is the answer that matters. Its retrieval numbers are noise:
+run anyway, it reports P@5 0.452 with a 35.7% forbidden-hit rate. That is what
+"arbitrary" looks like, and a reminder that **no similarity floor can save you from
+an embedder that returns zeros** — the floors assume distance means something.
+
+*The offline rows sit at 0.714 / 0.786, and they miss the same three cases every
+time.* `rec-003` (asking about the present, expecting `React`) and `rec-010` (the
+same, asking about the past with `includeHistory`, expecting `Vue`) both require
+matching a term that appears **only in the memory and never in the query**, and
+`rec-013` is the deliberate hard paraphrase. A hashing embedder has no notion of a
+paraphrase, and the lexical and entity routes have no shared term to match on, so
+those cases return nothing. Returning nothing is the correct behaviour for the
+machinery involved; the real stack closes `rec-003` and `rec-010` and is left with
+only `rec-013`.
+
+An earlier version of this table claimed 0.750 / 0.857 for exactly these rows and
+credited the gain to `includeHistory` no longer clamping the validity window. That
+fix was real, but the published figure did not match what
+`pnpm eval --provider oracle` printed — then or at any commit since, because
+`packages/` and the dataset are unchanged across all of them while `oracle`, `mock`
+and `null` have always reported what is in the table now. A number that no command
+in the repository produces is worse than no number: it is the same failure as the
+`bge-m3` baseline above, and it survived review because nothing checked it. It is
+checked now.
 
 *The real-stack numbers are all from the same 14-case recall suite*, measured with
 `--repeat 3` for `smart` (P@5 0.929 over three runs, stable) and single runs for

@@ -118,4 +118,33 @@ describe("harness calibration", () => {
     expect(report.recall.negativeAccuracy).toBeCloseTo(1, 5)
     expect(report.recall.forbiddenViolationRate).toBe(0)
   }, 120_000)
+
+  /**
+   * The README publishes the offline recall figures, and nothing pinned them.
+   * They drifted: the table claimed 0.750 / 0.857 for `oracle` and `mock`, while
+   * the command reported 0.714 / 0.786 — and no commit ever produced 0.857, so a
+   * number nobody could reproduce sat in the README as a benchmark.
+   *
+   * These are not quality gates. The stand-in embedder is a hash, so its recall
+   * says nothing about the product; the real stack is the quality measurement.
+   * What is asserted here is fidelity — that the table matches what the command
+   * prints. If this fails, either the README or the dataset moved, and the two
+   * have to move together.
+   */
+  it("reproduces the offline recall figures the README publishes", async () => {
+    for (const provider of ["oracle", "mock"] as const) {
+      const report = await runEval({ provider, filter: "rec-", label: `${provider}-recall` })
+
+      expect(report.recall.precisionAtK).toBeCloseTo(0.714, 3)
+      expect(report.recall.recallAtK).toBeCloseTo(0.786, 3)
+      expect(report.recall.negativeAccuracy).toBeCloseTo(1, 5)
+
+      // The misses are structural and the README names them: each needs a term
+      // that appears only in the memory, never in the query. Pinning the list
+      // means a case that starts failing shows up as a changed claim rather than
+      // a quietly lower average.
+      const missed = report.recall.cases.filter((c) => c.recallAtK < 1).map((c) => c.id)
+      expect(missed).toEqual(["rec-003", "rec-010", "rec-013"])
+    }
+  }, 180_000)
 })
