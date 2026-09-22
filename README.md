@@ -37,6 +37,13 @@ pnpm dev:api                 # HTTP API + web UI + MCP over HTTP  → http://127
 pnpm dev:mcp                 # MCP server over stdio (what agents spawn)
 ```
 
+The web UI ships in **English and Chinese**. The toggle is in the top bar, the
+choice is remembered in `localStorage` and defaults to your browser's language, and
+switching it also sets `<html lang>` — which a screen reader uses to decide how to
+pronounce the page, so it is not cosmetic. `apps/api/src/web-ui.test.ts` fails the
+build if a string is missing from either language, if the markup references a key
+nobody defined, or if the English text kept in the HTML drifts from the dictionary.
+
 **No build step is needed for any of this.** The CLIs and both servers run the
 TypeScript sources directly through `tsx`, and `tsconfig.tools.json` maps the
 workspace packages to `src/` so they resolve without `dist/` existing. That is

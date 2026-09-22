@@ -31,6 +31,11 @@ pnpm dev:api                 # HTTP API + web UI + MCP over HTTP  → http://127
 pnpm dev:mcp                 # MCP server over stdio (what agents spawn)
 ```
 
+Web UI 提供**中英文两个版本**。切换按钮在顶栏，选择记在 `localStorage` 里，默认跟随
+浏览器语言；切换时还会一并设置 `<html lang>` —— 屏幕阅读器靠它决定怎么发音，所以这
+不是装饰。任一种语言缺一条文案、标记引用了没人定义的 key、或 HTML 里保留的英文与词典
+不一致，`apps/api/src/web-ui.test.ts` 都会让构建失败。
+
 **以上都不需要先构建。** CLI 和两个服务都通过 `tsx` 直接运行 TypeScript 源码，而
 `tsconfig.tools.json` 把 workspace 各包映射到 `src/`，因此 `dist/` 不存在也能解析。
 这是有意为之：此前它们经由各包的 `exports` 字段解析到 `dist/`，于是全新克隆下这些
