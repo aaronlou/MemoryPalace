@@ -396,99 +396,105 @@ describe("prior art", () => {
     id: string
     repo: string
     status: string
+    title: string
     evidence: Array<{ ref: string; resolved: boolean; detail?: string; problem?: string }>
     unbacked: boolean
+    evaluation?: {
+      state: string
+      error?: string
+      revision?: string
+      draft?: { suggestedStatus: string; claim: string; rejectedEvidence: Array<{ ref: string }> }
+    }
   }
 
-  const adopted = {
-    repo: "Sherlockwz/T-Mem",
+  /** What a reviewer would send back after editing the draft. */
+  const reviewed = {
     title: "Trigger-augmented graph memory",
-    status: "adopted",
     claim: "Recall is reachability-bounded by similarity.",
     rationale: "The probe band answers the same premise.",
-    evidence: [
-      { kind: "path", ref: "docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md" },
-      { kind: "case", ref: "rec-017" },
-    ],
+    status: "partial",
+    evidence: [{ kind: "path", ref: "docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md" }],
   }
 
-  it("stores an entry whose evidence resolves, and reports each reference resolved", async () => {
-    const { status, body } = await post<PriorArtBody>("/api/prior-art", adopted)
+  /**
+   * The point of the redesign: a user supplies a repository and nothing else. They
+   * are not asked to judge whether a project is worth borrowing from — that is what
+   * the evaluation is for.
+   */
+  it("takes a repository and nothing else, then assesses it in the background", async () => {
+    const { status, body } = await post<PriorArtBody>("/api/prior-art", {
+      repo: "Sherlockwz/T-Mem",
+    })
     expect(status).toBe(200)
     expect(body.repo).toBe("Sherlockwz/T-Mem")
-    expect(body.unbacked).toBe(false)
-    expect(body.evidence.map((e) => e.resolved)).toEqual([true, true])
-    // The case resolves to the file that defines it, which is what a reader needs.
-    expect(body.evidence[1]!.detail).toContain("rec-017")
+    // Nothing is asserted about it yet, and it says so.
+    expect(body.status).toBe("unevaluated")
+    expect(["pending", "running", "ready"]).toContain(body.evaluation?.state)
   })
 
-  /**
-   * The load-bearing rule. Without it this page is prose about one's own
-   * influences, which is unfalsifiable and rots quietly.
-   */
-  it("refuses an adopted entry with no evidence", async () => {
+  it("accepts a pasted URL, since that is what users have", async () => {
+    const { body } = await post<PriorArtBody>("/api/prior-art", {
+      url: "https://github.com/aaronlou/MemoryPalace.git",
+    })
+    expect(body.repo).toBe("aaronlou/MemoryPalace")
+  })
+
+  it("rejects something that is not a repository", async () => {
     const { status, body } = await post<{ error: { message: string } }>("/api/prior-art", {
-      ...adopted,
-      evidence: [],
+      repo: "not a repository",
     })
     expect(status).toBe(400)
-    expect(body.error.message).toMatch(/needs at least one evidence reference/)
+    expect(body.error.message).toMatch(/owner\/name/)
   })
 
-  it("refuses evidence that does not resolve, naming the reference", async () => {
-    const { status, body } = await post<{ error: { message: string } }>("/api/prior-art", {
-      ...adopted,
-      evidence: [{ kind: "path", ref: "packages/core/src/recall/nope.ts" }],
-    })
-    expect(status).toBe(400)
-    expect(body.error.message).toContain("packages/core/src/recall/nope.ts")
-    expect(body.error.message).toMatch(/no such file/)
-  })
-
-  it("refuses a watched entry with no exit condition", async () => {
-    const { status, body } = await post<{ error: { message: string } }>("/api/prior-art", {
-      ...adopted,
-      status: "watched",
-      evidence: [],
-    })
-    expect(status).toBe(400)
-    expect(body.error.message).toMatch(/killCriterion/)
-  })
-
-  it("lists, updates in place, and removes", async () => {
-    const created = await post<PriorArtBody>("/api/prior-art", adopted)
-
-    const listed = await json<{ entries: PriorArtBody[] }>("/api/prior-art")
-    expect(listed.body.entries).toHaveLength(1)
-
-    // Re-adding the same repo updates rather than doubling the list, and keeps the
-    // id so a link into the page does not break when the assessment changes.
-    const updated = await json<PriorArtBody>(`/api/prior-art/${created.body.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ ...adopted, status: "rejected", evidence: [] }),
-    })
-    expect(updated.body.id).toBe(created.body.id)
-    expect(updated.body.status).toBe("rejected")
+  it("lists, accepts a reviewed draft, and removes", async () => {
+    const created = await post<PriorArtBody>("/api/prior-art", { repo: "Sherlockwz/T-Mem" })
     expect((await json<{ entries: PriorArtBody[] }>("/api/prior-art")).body.entries).toHaveLength(1)
+
+    // Accepting is the only path that writes an assessment, and it carries the
+    // reviewer's edits.
+    const adopted = await post<PriorArtBody>(`/api/prior-art/${created.body.id}/adopt`, {
+      repo: "Sherlockwz/T-Mem",
+      ...reviewed,
+    })
+    expect(adopted.status).toBe(200)
+    expect(adopted.body.status).toBe("partial")
+    expect(adopted.body.evaluation?.state).toBe("accepted")
+    expect(adopted.body.evidence[0]?.resolved).toBe(true)
 
     const removed = await json<{ removed: boolean }>(`/api/prior-art/${created.body.id}`, {
       method: "DELETE",
     })
     expect(removed.body.removed).toBe(true)
-
     // A second delete is a 404, not a silent success.
-    const again = await json(`/api/prior-art/${created.body.id}`, { method: "DELETE" })
-    expect(again.status).toBe(404)
+    expect((await json(`/api/prior-art/${created.body.id}`, { method: "DELETE" })).status).toBe(404)
   })
 
-  it("accepts a rejected entry with no evidence, because the reason is the evidence", async () => {
-    const { status, body } = await post<PriorArtBody>("/api/prior-art", {
-      ...adopted,
-      status: "rejected",
-      evidence: [],
-    })
-    expect(status).toBe(200)
-    expect(body.unbacked).toBe(false)
+  /**
+   * The load-bearing rule survives the new flow: accepting a draft that claims
+   * overlap with nothing to point at is refused here exactly as a hand-written
+   * entry would be.
+   */
+  it("refuses to accept a claim with nothing behind it", async () => {
+    const created = await post<PriorArtBody>("/api/prior-art", { repo: "owner/name" })
+    const { status, body } = await post<{ error: { message: string } }>(
+      `/api/prior-art/${created.body.id}/adopt`,
+      { repo: "owner/name", ...reviewed, status: "adopted", evidence: [] },
+    )
+    expect(status).toBe(400)
+    expect(body.error.message).toMatch(/needs at least one evidence reference/)
+  })
+
+  it("re-queues an assessment on request", async () => {
+    const created = await post<PriorArtBody>("/api/prior-art", { repo: "owner/name" })
+    const retried = await post<PriorArtBody>(`/api/prior-art/${created.body.id}/evaluate`, {})
+    expect(retried.status).toBe(200)
+    expect(["pending", "running", "ready"]).toContain(retried.body.evaluation?.state)
+  })
+
+  it("404s an assessment of an entry that does not exist", async () => {
+    const response = await post(`/api/prior-art/pa_missing/evaluate`, {})
+    expect(response.status).toBe(404)
   })
 })
 

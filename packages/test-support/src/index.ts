@@ -1,5 +1,5 @@
 import type { EmbeddingPort, LlmPort } from "@memory-palace/core"
-import type { Runtime } from "@memory-palace/runtime"
+import type { RepoFetcher, Runtime } from "@memory-palace/runtime"
 import { createRuntime } from "@memory-palace/runtime"
 import type { ConfigOverrides } from "@memory-palace/shared"
 import { FixedClock } from "@memory-palace/shared"
@@ -28,6 +28,8 @@ export interface TestRuntimeOptions {
   config?: ConfigOverrides
   /** Replace the language model, e.g. with a failing one. */
   llm?: LlmPort
+  /** How a candidate repository is read. Defaults to a stub, never the network. */
+  repoFetcher?: RepoFetcher
   /** Replace the embedding provider. */
   embeddings?: EmbeddingPort
 }
@@ -42,6 +44,28 @@ export interface TestRuntimeOptions {
  * it once with `pnpm db:test`.
  */
 export const TEST_DATABASE_URL = "postgresql://mp@127.0.0.1:55432/memory_palace_test"
+
+/**
+ * What a test sees when a repository is read.
+ *
+ * A stub by default rather than the real client: a test that reaches GitHub is
+ * slow, rate-limited, offline-hostile, and would assert against a README that can
+ * change under it. Tests that need different facts pass their own fetcher.
+ */
+export const stubRepoFetcher: RepoFetcher = {
+  async fetch(repo) {
+    return {
+      repo,
+      url: `https://github.com/${repo}`,
+      description: "A stub description",
+      topics: ["memory"],
+      language: "Python",
+      defaultBranch: "main",
+      revision: "0".repeat(40),
+      readme: "# Stub\n\nA repository the tests pretend to read.",
+    }
+  },
+}
 const DEFAULT_TEST_DB = TEST_DATABASE_URL
 
 /**
@@ -63,6 +87,7 @@ export async function createTestRuntime(options: TestRuntimeOptions = {}): Promi
     clock,
     llm: options.llm,
     embeddings: options.embeddings,
+    repoFetcher: options.repoFetcher ?? stubRepoFetcher,
     config: {
       ...override,
       databaseUrl: override.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB,

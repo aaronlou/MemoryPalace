@@ -210,18 +210,32 @@ The projects this one read, and what it took from them — including what it
 deliberately did not. It is the **Prior art** tab of the web UI, and versioned
 content in `scripts/prior-art-seed.ts`.
 
+**Adding one takes a URL and nothing else.** You are not asked to judge whether a
+project is worth borrowing from; that is the part being automated. Paste a GitHub
+link and, in the background, the system reads the repository — description, topics
+and README, at a recorded revision — and asks a model what the project claims,
+where it overlaps this one, and what we would deliberately *not* take from it. What
+comes back is a **draft you review**: every field is editable, and nothing enters
+the list until you accept it. Discarding costs nothing, because the entry never
+held more than a link.
+
 The rule that makes it worth reading: an entry marked `adopted` or `partial` must
 point at something in this repository — a file, optionally with a line anchor; a
-golden-dataset case id; or the commit that adopted the idea. `pnpm prior-art check`
-resolves every reference against the checkout, and CI runs it, so renaming a file
-fails the build instead of leaving a claim on a page that no longer describes
-anything. The page resolves them again when it loads and marks one that has since
-moved as broken.
+golden-dataset case id; or the commit that adopted the idea. The model is given an
+index of this project's ADRs, evaluation cases and source paths, and told to cite
+only from it; every reference it produces is then resolved against the checkout,
+and the ones that do not resolve are **dropped and shown to you**. That is the
+difference between a citation and a plausible file name. `pnpm prior-art check`
+applies the same test to the seed content, and CI runs it, so renaming a file fails
+the build instead of leaving a claim on a page that no longer describes anything.
 
 `watched` entries need a kill criterion, because "we are watching this" with no
 exit condition is how a list like this rots. `rejected` entries need no evidence:
 the reason *is* the evidence, and the entries that record a rejection are usually
 the more useful half.
+
+Reading a repository uses the public GitHub API — 60 requests an hour without a
+token, 5000 with one, so set `GITHUB_TOKEN` in `.env` if you will use this often.
 
 It is a separate table rather than part of the memory store, which matters more
 than it sounds. A memory answers "what should this agent know about the user"; an
@@ -934,9 +948,9 @@ Honest scope of v0.1:
   requires it, but there is no auth or tenant isolation.
 - **Memory decay.** `archived` exists and is excluded from recall; automatic
   ageing-out does not.
-- **Assisted prior-art intake.** Adding a project to the Prior art tab is a form
-  today. Fetching the repository and drafting the claim is not built, and the
-  adoption decision would stay manual when it is: the assessment is a judgement,
-  and only the evidence has to be mechanically checkable.
+- **A worker queue for prior-art assessment.** Assessments run inside the API
+  process, one at a time. A restart mid-assessment fails it and offers a retry
+  rather than resuming it, and a second instance would need the queue moved out of
+  the process.
 - **Scheduled backups.** Backup is a command you run, not a daemon; there is no
   cron or retention policy.

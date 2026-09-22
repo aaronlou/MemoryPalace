@@ -12,7 +12,12 @@ import type {
   ObservationStatus,
   RelationKind,
 } from "../memory/types.js"
-import type { PriorArtEntry, PriorArtInput } from "../prior-art/types.js"
+import type {
+  EvaluationState,
+  PriorArtEntry,
+  PriorArtEvaluation,
+  PriorArtInput,
+} from "../prior-art/types.js"
 
 /**
  * Storage port. `packages/storage-pg` implements it; nothing in the domain
@@ -224,5 +229,25 @@ export interface PriorArtStore {
   get(userId: string, id: string): Promise<PriorArtEntry | undefined>
   /** Insert or replace by `(userId, repo)`. Returns the stored row. */
   upsert(userId: string, input: PriorArtInput, id?: string): Promise<PriorArtEntry>
+  /** Look up by identity, so re-adding a known project does not overwrite it. */
+  getByRepo(userId: string, repo: string): Promise<PriorArtEntry | undefined>
   remove(userId: string, id: string): Promise<boolean>
+  /**
+   * Replace just the evaluation, leaving the assessment untouched.
+   *
+   * Deliberately does not touch `reviewed_at`: that means a human looked at the
+   * entry, and a machine's draft is not that.
+   */
+  setEvaluation(
+    userId: string,
+    id: string,
+    evaluation: PriorArtEvaluation,
+  ): Promise<PriorArtEntry | undefined>
+  /**
+   * Every entry in one of these evaluation states, across users.
+   *
+   * Recovery is a property of the process, not of a user: a job interrupted by a
+   * restart has to be found and failed, whoever it belonged to.
+   */
+  withEvaluationState(states: EvaluationState[]): Promise<PriorArtEntry[]>
 }

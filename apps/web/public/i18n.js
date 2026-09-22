@@ -168,7 +168,25 @@ const MESSAGES = {
     "priorart.lede":
       "The projects we read, and what we took from them — including what we deliberately did not. An entry marked adopted or partial has to point at something in this repository. Every reference is checked against the checkout when it is saved and again when this page loads, so a claim whose file, case or commit has since moved is shown as broken rather than left looking authoritative.",
     "priorart.add.title": "Add a project",
-    "priorart.field.repo": "GitHub repo",
+    "priorart.add.lede":
+      "Paste a GitHub link. Reading the project and writing the assessment are done for you — you only decide whether to keep it.",
+    "priorart.assess": "Assess usefulness",
+    "priorart.queued": "Queued…",
+    "priorart.evaluating": "Reading the repository and assessing it…",
+    "priorart.failed": "Assessment failed",
+    "priorart.retry": "Assess again",
+    "priorart.review.title": "Assessment draft",
+    "priorart.review.lede":
+      "Written by the model after reading the repository. Edit anything before you decide — nothing enters the list until you accept it.",
+    "priorart.review.confidence": "the model's own confidence: {value}",
+    "priorart.review.suggested": "Suggested status",
+    "priorart.review.dropped":
+      "{count} citation(s) point at nothing in this repository and were dropped",
+    "priorart.review.revision": "read at {revision}",
+    "priorart.adopt": "Accept",
+    "priorart.dismiss": "Discard",
+    "priorart.unassessed": "not assessed",
+    "priorart.field.repo": "GitHub repository or link",
     "priorart.field.status": "Status",
     "priorart.field.title": "Title",
     "priorart.field.claim": "What it claims",
@@ -201,6 +219,7 @@ const MESSAGES = {
     "priorart.added": "added {date}",
     "priorart.reviewed": "reviewed {date}",
 
+    "priorStatus.unevaluated": "not assessed",
     "priorStatus.adopted": "adopted",
     "priorStatus.partial": "partial",
     "priorStatus.rejected": "rejected",
@@ -265,6 +284,8 @@ const MESSAGES = {
       "Permanently erase everything?\n\nEvery memory, note and entity will be deleted. Export first if you might want any of it.",
     "confirm.removePriorArt":
       "Remove {repo} from the reference list?\n\nThis only removes the entry — nothing in the repository changes.",
+    "confirm.dismissPriorArt":
+      "Discard the assessment of {repo}?\n\nThe entry is removed. The repository is not touched, and you can assess it again.",
   },
 
   zh: {
@@ -403,7 +424,24 @@ const MESSAGES = {
     "priorart.lede":
       "我们读过的项目，以及从中取用了什么 —— 包括刻意没有取用的部分。标为「已采纳」或「部分采纳」的条目必须指向本仓库里的某样东西。每条引用在保存时和本页加载时都会对着检出目录检查一次，所以文件、用例或提交已经移动的主张会被标成失效，而不会继续显得权威。",
     "priorart.add.title": "添加一个项目",
-    "priorart.field.repo": "GitHub 仓库",
+    "priorart.add.lede":
+      "粘贴一个 GitHub 链接即可。读项目、写评估都由系统完成 —— 你只需要决定要不要留下它。",
+    "priorart.assess": "评估有用性",
+    "priorart.queued": "排队中…",
+    "priorart.evaluating": "正在阅读仓库并评估…",
+    "priorart.failed": "评估失败",
+    "priorart.retry": "重新评估",
+    "priorart.review.title": "评估草稿",
+    "priorart.review.lede":
+      "以下是模型读完后写的草稿。先改再决定 —— 在你采纳之前，它不会进入上面的清单。",
+    "priorart.review.confidence": "模型自评置信度：{value}",
+    "priorart.review.suggested": "建议状态",
+    "priorart.review.dropped": "{count} 条引用在本仓库里找不到，已丢弃",
+    "priorart.review.revision": "基于 {revision} 阅读",
+    "priorart.adopt": "采纳",
+    "priorart.dismiss": "忽略",
+    "priorart.unassessed": "待评估",
+    "priorart.field.repo": "GitHub 仓库或链接",
     "priorart.field.status": "状态",
     "priorart.field.title": "标题",
     "priorart.field.claim": "它主张什么",
@@ -433,6 +471,7 @@ const MESSAGES = {
     "priorart.added": "添加于 {date}",
     "priorart.reviewed": "复看过 {date}",
 
+    "priorStatus.unevaluated": "待评估",
     "priorStatus.adopted": "已采纳",
     "priorStatus.partial": "部分采纳",
     "priorStatus.rejected": "已否决",
@@ -495,6 +534,8 @@ const MESSAGES = {
       "永久擦除全部内容？\n\n每一条记忆、笔记和实体都会被删除。如果你可能还想留着，请先导出。",
     "confirm.removePriorArt":
       "把 {repo} 从参考资料清单里移除？\n\n这只移除该条目 —— 仓库里什么都没有改变。",
+    "confirm.dismissPriorArt":
+      "丢弃对 {repo} 的评估？\n\n该条目会被移除。仓库本身不受影响，你也可以重新评估。",
   },
 }
 

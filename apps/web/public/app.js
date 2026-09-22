@@ -445,7 +445,11 @@ function switchView(view) {
   }
   for (const section of $$(".view")) section.hidden = section.id !== `view-${view}`
   if (view === "timeline") renderTimeline().catch(reportError)
-  if (view === "priorart") loadPriorArt().catch(reportError)
+  if (view === "priorart") {
+    loadPriorArt()
+      .then(schedulePriorArtPoll)
+      .catch(reportError)
+  }
   if (view === "settings") loadPolicies().catch(reportError)
 }
 
@@ -510,7 +514,81 @@ function renderPriorArt(entries) {
   el.innerHTML = `<div class="list">${entries.map(renderPriorArtEntry).join("")}</div>`
 }
 
+/** Chip text for an entry that has no assessment yet or is mid-assessment. */
+function priorArtStateChip(entry) {
+  const state = entry.evaluation?.state ?? "none"
+  if (state === "pending") return `<span class="chip chip--warn">${esc(t("priorart.queued"))}</span>`
+  if (state === "running") return `<span class="chip chip--warn">${esc(t("priorart.evaluating"))}</span>`
+  if (state === "failed") return `<span class="chip chip--danger">${esc(t("priorart.failed"))}</span>`
+  if (state === "ready") return `<span class="chip chip--type">${esc(t("priorart.review.title"))}</span>`
+  return `<span class="chip ${PRIOR_ART_CHIP[entry.status] ?? ""}">${esc(priorStatusLabel(entry.status))}</span>`
+}
+
+/**
+ * The draft, as an editable review rather than a result.
+ *
+ * Nothing here is stored until Accept is pressed, which is why every field is a
+ * form control: the model's reading is a starting point and the reviewer owns the
+ * wording.
+ */
+function renderDraftForm(entry) {
+  const draft = entry.evaluation?.draft
+  if (!draft) return ""
+  const field = (name, labelKey, value = "", rows = 2) => `
+    <div class="field">
+      <label for="draft-${esc(entry.id)}-${name}">${esc(t(labelKey))}</label>
+      <textarea id="draft-${esc(entry.id)}-${name}" data-draft="${name}" rows="${rows}">${esc(value)}</textarea>
+    </div>`
+
+  const dropped =
+    draft.rejectedEvidence.length > 0
+      ? `<p class="hint">${esc(t("priorart.review.dropped", { count: draft.rejectedEvidence.length }))}</p>
+         <ul class="evidence">${draft.rejectedEvidence
+           .map(
+             (r) =>
+               `<li><span class="chip chip--danger">${esc(r.ref)}</span> <span class="hint">${esc(r.problem)}</span></li>`,
+           )
+           .join("")}</ul>`
+      : ""
+
+  return `
+    <div class="card" data-draft-panel="${esc(entry.id)}">
+      <h3>${esc(t("priorart.review.title"))}</h3>
+      <p class="lede">${esc(t("priorart.review.lede"))}</p>
+      <p class="hint">
+        ${esc(t("priorart.review.suggested"))}:
+        <strong>${esc(priorStatusLabel(draft.suggestedStatus))}</strong>
+        · ${esc(t("priorart.review.confidence", { value: draft.confidence.toFixed(2) }))}
+        ${entry.evaluation?.revision ? `· ${esc(t("priorart.review.revision", { revision: entry.evaluation.revision.slice(0, 7) }))}` : ""}
+      </p>
+      <div class="field">
+        <label for="draft-${esc(entry.id)}-status">${esc(t("priorart.review.suggested"))}</label>
+        <select id="draft-${esc(entry.id)}-status" data-draft="status">
+          ${["adopted", "partial", "rejected", "watched"]
+            .map(
+              (value) =>
+                `<option value="${value}" ${value === draft.suggestedStatus ? "selected" : ""}>${esc(priorStatusLabel(value))}</option>`,
+            )
+            .join("")}
+        </select>
+      </div>
+      ${field("title", "priorart.field.title", draft.title, 2)}
+      ${field("claim", "priorart.field.claim", draft.claim, 3)}
+      ${field("rationale", "priorart.field.rationale", draft.rationale, 3)}
+      ${field("notTaken", "priorart.field.notTaken", draft.notTaken ?? "", 2)}
+      ${field("killCriterion", "priorart.field.kill", draft.killCriterion ?? "", 2)}
+      ${field("evidence", "priorart.field.evidence", draft.evidence.map((e) => `${e.kind === "path" ? "" : `${e.kind}:`}${e.ref}`).join("\n"), 3)}
+      <p class="hint">${esc(t("priorart.field.evidenceHint"))}</p>
+      ${dropped}
+      <div class="button-row">
+        <button class="btn btn--primary" data-adopt="${esc(entry.id)}">${esc(t("priorart.adopt"))}</button>
+        <button class="btn btn--danger" data-dismiss="${esc(entry.id)}">${esc(t("priorart.dismiss"))}</button>
+      </div>
+    </div>`
+}
+
 function renderPriorArtEntry(entry) {
+  const state = entry.evaluation?.state ?? "none"
   const evidence = entry.evidence.length
     ? `<ul class="evidence">${entry.evidence
         .map(
@@ -521,33 +599,45 @@ function renderPriorArtEntry(entry) {
           </li>`,
         )
         .join("")}</ul>`
-    : `<p class="hint">${esc(t("priorart.noEvidence"))}</p>`
+    : ""
 
-  return `<article class="item">
+  // An entry that has not been assessed has nothing to show but its state.
+  const body =
+    state === "ready"
+      ? renderDraftForm(entry)
+      : state === "pending" || state === "running"
+        ? `<p class="hint" aria-live="polite">${esc(t(state === "pending" ? "priorart.queued" : "priorart.evaluating"))}</p>`
+        : state === "failed"
+          ? `<p class="hint">${esc(entry.evaluation?.error ?? "")}</p>
+             <div class="button-row">
+               <button class="btn btn--sm" data-evaluate="${esc(entry.id)}">${esc(t("priorart.retry"))}</button>
+               <button class="btn btn--sm btn--danger" data-remove-priorart="${esc(entry.id)}">${esc(t("common.remove"))}</button>
+             </div>`
+          : `<div class="item__content">
+               ${entry.claim ? `<p>${esc(entry.claim)}</p>` : ""}
+               ${entry.rationale ? `<p>${esc(entry.rationale)}</p>` : ""}
+               ${entry.notTaken ? `<p><em>${esc(t("priorart.notTaken"))}</em> ${esc(entry.notTaken)}</p>` : ""}
+               ${entry.killCriterion ? `<p><em>${esc(t("priorart.kill"))}</em> ${esc(entry.killCriterion)}</p>` : ""}
+               ${
+                 entry.unbacked
+                   ? `<p class="hint">${esc(t("priorart.unbacked", { status: priorStatusLabel(entry.status) }))}</p>`
+                   : ""
+               }
+               ${evidence || `<p class="hint">${esc(t("priorart.noEvidence"))}</p>`}
+             </div>
+             <div class="item__actions">
+               <button class="btn btn--sm btn--danger" data-remove-priorart="${esc(entry.id)}">${esc(t("common.remove"))}</button>
+             </div>`
+
+  return `<article class="item" data-priorart="${esc(entry.id)}">
     <div class="item__main">
       <div class="item__meta">
-        <span class="chip ${PRIOR_ART_CHIP[entry.status] ?? ""}">${esc(priorStatusLabel(entry.status))}</span>
+        ${priorArtStateChip(entry)}
         <a href="${esc(entry.url)}" target="_blank" rel="noreferrer noopener">${esc(entry.repo)}</a>
-        <span class="hint">${esc(t("priorart.added", { date: entry.addedAt.slice(0, 10) }))} · ${esc(
-          t("priorart.reviewed", { date: entry.reviewedAt.slice(0, 10) }),
-        )}</span>
+        <span class="hint">${esc(t("priorart.added", { date: entry.addedAt.slice(0, 10) }))}</span>
       </div>
-      <div class="item__content">
-        <strong>${esc(entry.title)}</strong>
-        <p>${esc(entry.claim)}</p>
-        <p>${esc(entry.rationale)}</p>
-        ${entry.notTaken ? `<p><em>${esc(t("priorart.notTaken"))}</em> ${esc(entry.notTaken)}</p>` : ""}
-        ${entry.killCriterion ? `<p><em>${esc(t("priorart.kill"))}</em> ${esc(entry.killCriterion)}</p>` : ""}
-        ${
-          entry.unbacked
-            ? `<p class="hint">${esc(t("priorart.unbacked", { status: priorStatusLabel(entry.status) }))}</p>`
-            : ""
-        }
-        ${evidence}
-      </div>
-    </div>
-    <div class="item__actions">
-      <button class="btn btn--sm btn--danger" data-remove-priorart="${esc(entry.id)}">Remove</button>
+      ${state === "ready" ? "" : `<strong>${esc(entry.title)}</strong>`}
+      ${body}
     </div>
   </article>`
 }
@@ -559,23 +649,72 @@ async function loadPriorArt() {
 }
 
 async function addPriorArt(form) {
-  const value = (name) => form.elements[name]?.value ?? ""
-  await api("/api/prior-art", {
-    method: "POST",
-    body: JSON.stringify({
-      repo: value("repo").trim(),
-      title: value("title").trim(),
-      status: value("status"),
-      claim: value("claim").trim(),
-      rationale: value("rationale").trim(),
-      notTaken: value("notTaken").trim() || undefined,
-      killCriterion: value("killCriterion").trim() || undefined,
-      evidence: parseEvidence(value("evidence")),
-    }),
-  })
+  const repo = form.elements.repo.value.trim()
+  if (!repo) return
+  await api("/api/prior-art", { method: "POST", body: JSON.stringify({ repo }) })
   form.reset()
+  toast(t("priorart.queued"))
+  await loadPriorArt()
+  // The job runs in the background, so the list is re-read until nothing is in
+  // flight. Polling stops on its own: once every entry has settled there is
+  // nothing left to wait for.
+  schedulePriorArtPoll()
+}
+
+let priorArtTimer
+function schedulePriorArtPoll() {
+  clearTimeout(priorArtTimer)
+  const active = (STATE.priorArt ?? []).some(
+    (e) => e.evaluation?.state === "pending" || e.evaluation?.state === "running",
+  )
+  if (!active) return
+  priorArtTimer = setTimeout(() => {
+    if (STATE.view === "priorart") loadPriorArt().catch(reportError)
+    schedulePriorArtPoll()
+  }, 1500)
+}
+
+/** Read the review panel's edits back into an input for the adopt endpoint. */
+function draftInput(entryId) {
+  const panel = $(`[data-draft-panel="${entryId}"]`)
+  if (!panel) return null
+  const value = (name) => panel.querySelector(`[data-draft="${name}"]`)?.value ?? ""
+  return {
+    title: value("title").trim(),
+    claim: value("claim").trim(),
+    rationale: value("rationale").trim(),
+    status: value("status"),
+    notTaken: value("notTaken").trim() || undefined,
+    killCriterion: value("killCriterion").trim() || undefined,
+    evidence: parseEvidence(value("evidence")),
+  }
+}
+
+async function adoptPriorArt(id) {
+  const entry = (STATE.priorArt ?? []).find((e) => e.id === id)
+  const input = draftInput(id)
+  if (!entry || !input) return
+  await api(`/api/prior-art/${id}/adopt`, {
+    method: "POST",
+    body: JSON.stringify({ repo: entry.repo, sourceRevision: entry.evaluation?.revision, ...input }),
+  })
   toast(t("toast.priorArtAdded"))
   await loadPriorArt()
+}
+
+async function dismissPriorArt(id) {
+  const entry = (STATE.priorArt ?? []).find((e) => e.id === id)
+  const ok = window.confirm(t("confirm.dismissPriorArt", { repo: entry?.repo ?? "?" }))
+  if (!ok) return
+  await api(`/api/prior-art/${id}`, { method: "DELETE" })
+  await loadPriorArt()
+}
+
+async function evaluatePriorArt(id) {
+  await api(`/api/prior-art/${id}/evaluate`, { method: "POST" })
+  toast(t("priorart.queued"))
+  await loadPriorArt()
+  schedulePriorArtPoll()
 }
 
 async function removePriorArt(id) {
@@ -785,8 +924,15 @@ function init() {
     addPriorArt(event.currentTarget).catch(reportError)
   })
   $("#priorart-list").addEventListener("click", (event) => {
-    const id = event.target.closest("[data-remove-priorart]")?.dataset.removePriorart
-    if (id) removePriorArt(id).catch(reportError)
+    const target = event.target
+    const adopt = target.closest("[data-adopt]")?.dataset.adopt
+    const dismiss = target.closest("[data-dismiss]")?.dataset.dismiss
+    const retry = target.closest("[data-evaluate]")?.dataset.evaluate
+    const remove = target.closest("[data-remove-priorart]")?.dataset.removePriorart
+    if (adopt) adoptPriorArt(adopt).catch(reportError)
+    else if (dismiss) dismissPriorArt(dismiss).catch(reportError)
+    else if (retry) evaluatePriorArt(retry).catch(reportError)
+    else if (remove) removePriorArt(remove).catch(reportError)
   })
 
   refresh()

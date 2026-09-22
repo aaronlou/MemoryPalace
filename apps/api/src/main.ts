@@ -10,6 +10,17 @@ import { createApp, mountMcp, mountWebUi } from "./app.js"
  */
 async function main(): Promise<void> {
   const runtime = createRuntime()
+
+  // Evaluations run inside this process, so any that were in flight when it last
+  // stopped will never finish. Fail them before serving, so the page offers a
+  // retry instead of a spinner that never resolves.
+  const interrupted = await runtime.priorArt.recoverInterrupted()
+  if (interrupted > 0) {
+    process.stderr.write(
+      `prior art: failed ${interrupted} evaluation(s) interrupted by a restart\n`,
+    )
+  }
+
   const app = createApp(runtime)
 
   await mountMcp(app, runtime)

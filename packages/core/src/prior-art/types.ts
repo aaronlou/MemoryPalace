@@ -19,8 +19,66 @@ import type { IsoDateTime } from "@memory-palace/shared"
  * rot silently.
  */
 
-export const PRIOR_ART_STATUSES = ["adopted", "partial", "rejected", "watched"] as const
+export const PRIOR_ART_STATUSES = [
+  "unevaluated",
+  "adopted",
+  "partial",
+  "rejected",
+  "watched",
+] as const
 export type PriorArtStatus = (typeof PRIOR_ART_STATUSES)[number]
+
+/**
+ * Where an entry is in the assess-then-decide flow.
+ *
+ * `none` is a hand-written entry that was never sent for evaluation — the CLI seed
+ * path. Everything else is the lifecycle of one evaluation run: queued, in flight,
+ * a draft waiting for a human, failed, or accepted. Nothing advances to a status
+ * on its own; `ready` means a draft exists, not that anything was decided.
+ */
+export const EVALUATION_STATES = [
+  "none",
+  "pending",
+  "running",
+  "ready",
+  "failed",
+  "accepted",
+] as const
+export type EvaluationState = (typeof EVALUATION_STATES)[number]
+
+/**
+ * What the model produced, before a human agreed to it.
+ *
+ * `rejectedEvidence` is the honest half: the model is asked to cite this
+ * repository, and anything it cites that does not resolve is dropped and listed
+ * here rather than quietly kept. A suggested reference is a hypothesis; the
+ * filesystem decides.
+ */
+export interface PriorArtDraft {
+  title: string
+  claim: string
+  rationale: string
+  suggestedStatus: PriorArtStatus
+  notTaken?: string
+  killCriterion?: string
+  evidence: PriorArtEvidence[]
+  rejectedEvidence: Array<{ ref: string; problem: string }>
+  /** The model's own confidence in the assessment, 0-1. Shown to the reviewer. */
+  confidence: number
+}
+
+export interface PriorArtEvaluation {
+  state: EvaluationState
+  startedAt?: IsoDateTime
+  finishedAt?: IsoDateTime
+  /** Why it failed, in the words the user needs to act on. */
+  error?: string
+  /** What the model read, so an assessment can be attributed to a revision. */
+  revision?: string
+  /** The repo as fetched, for the record. */
+  repoDescription?: string
+  draft?: PriorArtDraft
+}
 
 /**
  * What an evidence reference points at.
@@ -65,8 +123,21 @@ export interface PriorArtEntry {
   /** The revision a drafted summary was read from, when one was drafted by a model. */
   sourceRevision?: string
   evidence: PriorArtEvidence[]
+  /** Absent on rows written before evaluation existed; read as `none`. */
+  evaluation?: PriorArtEvaluation
   addedAt: IsoDateTime
   reviewedAt: IsoDateTime
+}
+
+/**
+ * The minimum a client has to supply.
+ *
+ * Everything else is either fetched or drafted. Users are not expected to judge
+ * whether a project is worth borrowing from — that is what the evaluation is for —
+ * so the interface asks for a repository and nothing else.
+ */
+export interface PriorArtRequest {
+  repo: string
 }
 
 /** What a client may supply. The id and timestamps are the store's business. */
@@ -82,6 +153,7 @@ export interface PriorArtInput {
   /** The revision a drafted summary was read from. Set when a model drafted it. */
   sourceRevision?: string
   evidence?: PriorArtEvidence[]
+  evaluation?: PriorArtEvaluation
 }
 
 const REPO_SHAPE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
@@ -106,8 +178,14 @@ export function validatePriorArtInput(input: PriorArtInput): string[] {
     problems.push(`repo must look like "owner/name", got ${JSON.stringify(input.repo)}`)
   }
   if (!input.title?.trim()) problems.push("title is required")
-  if (!input.claim?.trim()) problems.push("claim is required")
-  if (!input.rationale?.trim()) problems.push("rationale is required")
+
+  // An entry created from a URL alone has nothing to say yet: the claim and the
+  // assessment are exactly what the evaluation is for. Requiring them here would
+  // put the eight-field form back, which is the thing this flow exists to remove.
+  if (input.status !== "unevaluated") {
+    if (!input.claim?.trim()) problems.push("claim is required")
+    if (!input.rationale?.trim()) problems.push("rationale is required")
+  }
 
   if (!(PRIOR_ART_STATUSES as readonly string[]).includes(input.status)) {
     problems.push(`status must be one of ${PRIOR_ART_STATUSES.join(", ")}`)
@@ -122,7 +200,8 @@ export function validatePriorArtInput(input: PriorArtInput): string[] {
   }
 
   // The load-bearing rule. "We took this idea" with nothing to point at is the
-  // claim this feature exists to make checkable.
+  // claim this feature exists to make checkable. `unevaluated` asserts nothing yet,
+  // so it is exempt along with `rejected`.
   if ((input.status === "adopted" || input.status === "partial") && evidence.length === 0) {
     problems.push(
       `status "${input.status}" needs at least one evidence reference to this repository`,

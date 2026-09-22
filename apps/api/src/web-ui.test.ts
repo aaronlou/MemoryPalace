@@ -333,7 +333,9 @@ describe("translations", () => {
       ),
       ...["active", "pending", "superseded", "archived"].map((v) => `status.${v}`),
       ...["path", "case", "commit"].map((v) => `evidence.${v}`),
-      ...["adopted", "partial", "rejected", "watched"].map((v) => `priorStatus.${v}`),
+      ...["unevaluated", "adopted", "partial", "rejected", "watched"].map(
+        (v) => `priorStatus.${v}`,
+      ),
     ]
     const missing = required.filter((key) => !(key in enTable))
     expect(missing).toEqual([])

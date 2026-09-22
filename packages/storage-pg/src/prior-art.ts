@@ -1,5 +1,7 @@
 import type {
+  EvaluationState,
   PriorArtEntry,
+  PriorArtEvaluation,
   PriorArtEvidence,
   PriorArtInput,
   PriorArtStatus,
@@ -61,8 +63,8 @@ export class PgPriorArtStore implements PriorArtStore {
     const rows = await this.q<PriorArtRow>(
       `INSERT INTO prior_art
          (id, user_id, repo, url, title, claim, status, rationale,
-          not_taken, kill_criterion, source_revision, evidence)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)
+          not_taken, kill_criterion, source_revision, evidence, evaluation)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13::jsonb)
        ON CONFLICT (user_id, repo) DO UPDATE SET
          url             = EXCLUDED.url,
          title           = EXCLUDED.title,
@@ -73,6 +75,7 @@ export class PgPriorArtStore implements PriorArtStore {
          kill_criterion  = EXCLUDED.kill_criterion,
          source_revision = EXCLUDED.source_revision,
          evidence        = EXCLUDED.evidence,
+         evaluation      = EXCLUDED.evaluation,
          -- An edit counts as a review: the point of the timestamp is to surface
          -- entries nobody has looked at, not to punish correcting one.
          reviewed_at     = now()
@@ -90,9 +93,41 @@ export class PgPriorArtStore implements PriorArtStore {
         input.killCriterion?.trim() || null,
         input.sourceRevision?.trim() || null,
         JSON.stringify(input.evidence ?? []),
+        JSON.stringify(input.evaluation ?? { state: "none" }),
       ],
     )
     return toEntry(rows[0]!)
+  }
+
+  async getByRepo(userId: string, repo: string): Promise<PriorArtEntry | undefined> {
+    const rows = await this.q<PriorArtRow>(
+      `SELECT * FROM prior_art WHERE user_id = $1 AND repo = $2`,
+      [userId, repo],
+    )
+    return rows[0] ? toEntry(rows[0]) : undefined
+  }
+
+  async setEvaluation(
+    userId: string,
+    id: string,
+    evaluation: PriorArtEvaluation,
+  ): Promise<PriorArtEntry | undefined> {
+    const rows = await this.q<PriorArtRow>(
+      `UPDATE prior_art SET evaluation = $3::jsonb
+        WHERE user_id = $1 AND id = $2
+        RETURNING *`,
+      [userId, id, JSON.stringify(evaluation)],
+    )
+    return rows[0] ? toEntry(rows[0]) : undefined
+  }
+
+  async withEvaluationState(states: EvaluationState[]): Promise<PriorArtEntry[]> {
+    if (states.length === 0) return []
+    const rows = await this.q<PriorArtRow>(
+      `SELECT * FROM prior_art WHERE evaluation->>'state' = ANY($1::text[]) ORDER BY added_at`,
+      [states],
+    )
+    return rows.map(toEntry)
   }
 
   /** True when a row was removed, so a caller can 404 on a stale id. */
@@ -118,6 +153,7 @@ interface PriorArtRow extends pg.QueryResultRow {
   kill_criterion: string | null
   source_revision: string | null
   evidence: unknown
+  evaluation: unknown
   added_at: Date | string
   reviewed_at: Date | string
 }
@@ -136,6 +172,7 @@ function toEntry(row: PriorArtRow): PriorArtEntry {
     killCriterion: row.kill_criterion ?? undefined,
     sourceRevision: row.source_revision ?? undefined,
     evidence: toEvidence(row.evidence),
+    evaluation: toEvaluation(row.evaluation),
     addedAt: toIso(row.added_at),
     reviewedAt: toIso(row.reviewed_at),
   }
@@ -160,6 +197,18 @@ function toEvidence(value: unknown): PriorArtEvidence[] {
     })
   }
   return out
+}
+
+/**
+ * jsonb comes back as `unknown`, so the shape is re-established rather than
+ * trusted. A malformed value degrades to "no evaluation" — the UI then offers the
+ * button again — instead of throwing out of a list endpoint.
+ */
+function toEvaluation(value: unknown): PriorArtEvaluation {
+  if (typeof value !== "object" || value === null) return { state: "none" }
+  const record = value as Record<string, unknown>
+  const state = typeof record.state === "string" ? record.state : "none"
+  return { ...record, state } as PriorArtEvaluation
 }
 
 function toIso(value: Date | string): string {

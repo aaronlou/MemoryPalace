@@ -300,108 +300,24 @@
 
         <div class="card">
           <h3 data-i18n="priorart.add.title">Add a project</h3>
+          <p class="lede" data-i18n="priorart.add.lede">
+            Paste a GitHub link. Reading the project and writing the assessment are done for you —
+            you only decide whether to keep it.
+          </p>
           <form id="priorart-form">
             <div class="toolbar">
               <div class="field field--grow">
-                <label for="pa-repo" data-i18n="priorart.field.repo">GitHub repo</label>
-                <input id="pa-repo" name="repo" placeholder="owner/name" required />
+                <label for="pa-repo" data-i18n="priorart.field.repo">GitHub repository or link</label>
+                <input
+                  id="pa-repo"
+                  name="repo"
+                  placeholder="owner/name or a GitHub link"
+                  autocomplete="off"
+                  required
+                />
               </div>
-              <div class="field">
-                <label for="pa-status" data-i18n="priorart.field.status">Status</label>
-                <select id="pa-status" name="status">
-                  <option value="watched" data-i18n="priorStatus.watched">watched</option>
-                  <option value="partial" data-i18n="priorStatus.partial">partial</option>
-                  <option value="adopted" data-i18n="priorStatus.adopted">adopted</option>
-                  <option value="rejected" data-i18n="priorStatus.rejected">rejected</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="field">
-              <label for="pa-title" data-i18n="priorart.field.title">Title</label>
-              <input
-                id="pa-title"
-                name="title"
-                data-i18n-placeholder="priorart.placeholder.title"
-                placeholder="Trigger-augmented graph memory"
-                required
-              />
-            </div>
-
-            <div class="field">
-              <label for="pa-claim" data-i18n="priorart.field.claim">What it claims</label>
-              <textarea
-                id="pa-claim"
-                name="claim"
-                rows="2"
-                required
-                data-i18n-placeholder="priorart.placeholder.claim"
-                placeholder="Recall is reachability-bounded by query/memory similarity, so systems miss associative recall."
-              ></textarea>
-            </div>
-
-            <div class="field">
-              <label for="pa-rationale" data-i18n="priorart.field.rationale">Assessment</label>
-              <textarea
-                id="pa-rationale"
-                name="rationale"
-                rows="2"
-                required
-                data-i18n-placeholder="priorart.placeholder.rationale"
-                placeholder="Why it is or is not combinable with this product."
-              ></textarea>
-            </div>
-
-            <div class="field">
-              <label for="pa-nottaken"
-                ><span data-i18n="priorart.field.notTaken">What we did not take</span>
-                <span class="hint" data-i18n="priorart.field.notTakenHint"
-                  >(optional, and the most useful field)</span
-                ></label
-              >
-              <textarea id="pa-nottaken" name="notTaken" rows="2"></textarea>
-            </div>
-
-            <div class="field">
-              <label for="pa-kill"
-                ><span data-i18n="priorart.field.kill">Kill criterion</span>
-                <span class="hint" data-i18n="priorart.field.killHint"
-                  >(required for watched)</span
-                ></label
-              >
-              <textarea
-                id="pa-kill"
-                name="killCriterion"
-                rows="2"
-                data-i18n-placeholder="priorart.placeholder.kill"
-                placeholder="What result would make us build it."
-              ></textarea>
-            </div>
-
-            <div class="field">
-              <label for="pa-evidence"
-                ><span data-i18n="priorart.field.evidence">Evidence</span>
-                <span class="hint" data-i18n="priorart.field.evidenceHint"
-                  >(one reference per line)</span
-                ></label
-              >
-              <textarea
-                id="pa-evidence"
-                name="evidence"
-                rows="3"
-                data-i18n-placeholder="priorart.placeholder.evidence"
-                placeholder="docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md&#10;packages/core/src/recall/pipeline.ts:317&#10;case:rec-017"
-              ></textarea>
-              <p class="hint" data-i18n-html="priorart.evidence.help">
-                A path, optionally with a line anchor (<code>file.ts:317</code> or
-                <code>file.ts#L317</code>); <code>case:rec-017</code> for a golden-dataset case;
-                <code>commit:abc1234</code> for the commit that adopted the idea.
-              </p>
-            </div>
-
-            <div class="button-row">
-              <button class="btn btn--primary" type="submit" data-i18n="priorart.add.submit">
-                Add project
+              <button class="btn btn--primary" type="submit" data-i18n="priorart.assess">
+                Assess usefulness
               </button>
             </div>
           </form>

@@ -2,14 +2,22 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { PriorArtEntry, PriorArtInput, PriorArtStore } from "@memory-palace/core"
+import type {
+  LlmPort,
+  PriorArtEntry,
+  PriorArtEvaluationOutput,
+  PriorArtInput,
+  PriorArtStore,
+} from "@memory-palace/core"
 import { beforeEach, describe, expect, it } from "vitest"
+import type { RepoFacts, RepoFetcher } from "./github-repo.js"
 import {
   defaultRepoRoot,
   PriorArtService,
   resetDatasetIndex,
   resolveEvidenceList,
 } from "./prior-art.js"
+import { capabilityIndex, PriorArtEvaluator } from "./prior-art-evaluate.js"
 
 /**
  * Resolution is the mechanism the Prior art page rests on: "this idea is embodied
@@ -21,10 +29,17 @@ function makeTree(): string {
   const root = mkdtempSync(join(tmpdir(), "prior-art-"))
   mkdirSync(join(root, "packages", "core"), { recursive: true })
   mkdirSync(join(root, "evals", "datasets"), { recursive: true })
+  mkdirSync(join(root, "docs", "adr"), { recursive: true })
   writeFileSync(join(root, "packages", "core", "pipeline.ts"), "line1\nline2\nline3\n")
   writeFileSync(
+    join(root, "docs", "adr", "0006-confirmed-rescue.md"),
+    "# Confirmed rescue below the floor\n\nBody.\n",
+  )
+  writeFileSync(
     join(root, "evals", "datasets", "recall.ts"),
-    'export const recallCases = [\n  { id: "rec-017" },\n  { id: "rec-020" },\n]\n',
+    "export const recallCases = [\n" +
+      '  { id: "rec-017", note: "must be recalled, judged not measured" },\n' +
+      '  { id: "rec-020", note: "the negative half of the pair" },\n]\n',
   )
   return root
 }
@@ -124,6 +139,9 @@ function fakeStore(): PriorArtStore & { rows: PriorArtEntry[] } {
     async get(_userId, id) {
       return rows.find((r) => r.id === id)
     },
+    async getByRepo(_userId, repo) {
+      return rows.find((r) => r.repo === repo)
+    },
     async upsert(_userId, input: PriorArtInput, id) {
       // Mirrors the Postgres `ON CONFLICT (user_id, repo) DO UPDATE`: the unique
       // key is the repo, and the existing id survives. A fake that just appends
@@ -148,6 +166,15 @@ function fakeStore(): PriorArtStore & { rows: PriorArtEntry[] } {
       rows.splice(i, 1)
       return true
     },
+    async setEvaluation(_userId, id, evaluation) {
+      const row = rows.find((r) => r.id === id)
+      if (!row) return undefined
+      row.evaluation = evaluation
+      return row
+    },
+    async withEvaluationState(states) {
+      return rows.filter((r) => states.includes(r.evaluation?.state ?? "none"))
+    },
   }
 }
 
@@ -167,7 +194,7 @@ describe("PriorArtService rules", () => {
     root = makeTree()
     resetDatasetIndex()
     store = fakeStore()
-    service = new PriorArtService(store, root)
+    service = new PriorArtService({ store, repoRoot: root })
   })
 
   it("refuses an adopted entry with nothing behind it", async () => {
@@ -231,6 +258,241 @@ describe("PriorArtService rules", () => {
   it("404s an update to an entry that does not exist", async () => {
     await expect(
       service.update("u", "pa_missing", { ...base, status: "rejected" }),
-    ).rejects.toThrow(/no prior-art entry/)
+    ).rejects.toThrow(/prior-art entry not found/)
+  })
+})
+
+/** A model that returns exactly what the test tells it to. */
+function stubLlm(output: Partial<PriorArtEvaluationOutput>): LlmPort {
+  return {
+    defaultModelId: "stub",
+    async generateObject() {
+      return {
+        value: {
+          title: "T-Mem",
+          claim: "Recall is reachability-bounded.",
+          rationale: "Overlaps the probe band.",
+          suggestedStatus: "partial" as const,
+          notTaken: null,
+          killCriterion: null,
+          evidence: [],
+          confidence: 0.7,
+          ...output,
+        },
+        usage: { inputTokens: 0, outputTokens: 0, costUsd: 0, llmCalls: 1 },
+        modelId: "stub",
+        promptHash: "stub",
+        cached: false,
+      }
+    },
+  } as unknown as LlmPort
+}
+
+const stubFetcher = (facts: Partial<RepoFacts> = {}): RepoFetcher => ({
+  async fetch(repo: string) {
+    return { repo, url: `https://github.com/${repo}`, topics: [], readme: "README body", ...facts }
+  },
+})
+
+/** Poll, because the job is deliberately fire-and-forget. */
+async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  for (let i = 0; i < 200; i++) {
+    const value = await read()
+    if (done(value)) return value
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error("timed out waiting for the evaluation")
+}
+
+describe("the evaluator's index of this project", () => {
+  it("offers real paths and case ids for the model to cite", () => {
+    const root = makeTree()
+    resetDatasetIndex()
+    const index = capabilityIndex(root)
+    expect(index).toContain("docs/adr/0006-confirmed-rescue.md — Confirmed rescue below the floor")
+    expect(index).toContain("rec-017 — must be recalled, judged not measured")
+    expect(index).toContain("case:")
+  })
+})
+
+describe("evaluating a repository", () => {
+  let root: string
+  let store: ReturnType<typeof fakeStore>
+
+  const serviceWith = (llm: LlmPort, facts: Partial<RepoFacts> = {}) =>
+    new PriorArtService({
+      store,
+      repoRoot: root,
+      evaluator: new PriorArtEvaluator(llm, root),
+      fetcher: stubFetcher(facts),
+    })
+
+  beforeEach(() => {
+    root = makeTree()
+    resetDatasetIndex()
+    store = fakeStore()
+  })
+
+  it("takes a repository and nothing else, then assesses it in the background", async () => {
+    const service = serviceWith(stubLlm({ suggestedStatus: "partial" }))
+    const created = await service.requestEvaluation("u", "Sherlockwz/T-Mem")
+
+    // The response is immediate and the entry asserts nothing yet.
+    expect(created.status).toBe("unevaluated")
+    expect(created.evaluation?.state === "pending" || created.evaluation?.state === "running").toBe(
+      true,
+    )
+
+    const ready = await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "ready",
+    )
+    expect(ready[0]!.status).toBe("unevaluated")
+    expect(ready[0]!.evaluation?.draft?.claim).toBe("Recall is reachability-bounded.")
+    // The revision read travels with the assessment.
+    expect(ready[0]!.evaluation?.revision).toBeUndefined()
+  })
+
+  /**
+   * The rule that makes the whole feature trustworthy: the model proposes
+   * citations, the checkout decides. Anything that does not resolve is dropped and
+   * reported, never quietly kept.
+   */
+  it("keeps only the citations that resolve, and reports the ones that do not", async () => {
+    const service = serviceWith(
+      stubLlm({
+        evidence: [
+          { kind: "path", ref: "packages/core/pipeline.ts", note: "exists" },
+          { kind: "path", ref: "packages/core/invented.ts", note: "does not" },
+          { kind: "case", ref: "rec-017", note: "exists" },
+          { kind: "case", ref: "rec-999", note: "does not" },
+        ],
+      }),
+    )
+    await service.requestEvaluation("u", "owner/name")
+    const ready = await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "ready",
+    )
+
+    const draft = ready[0]!.evaluation!.draft!
+    expect(draft.evidence.map((e) => e.ref)).toEqual(["packages/core/pipeline.ts", "rec-017"])
+    expect(draft.rejectedEvidence.map((e) => e.ref)).toEqual([
+      "packages/core/invented.ts",
+      "rec-999",
+    ])
+    expect(draft.rejectedEvidence[0]!.problem).toMatch(/no such file/)
+  })
+
+  it("records a failure on the row instead of throwing into the void", async () => {
+    const failing: LlmPort = {
+      defaultModelId: "stub",
+      async generateObject() {
+        throw new Error("model exploded")
+      },
+    } as unknown as LlmPort
+    const service = serviceWith(failing)
+    await service.requestEvaluation("u", "owner/name")
+
+    const failed = await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "failed",
+    )
+    expect(failed[0]!.evaluation?.error).toMatch(/model exploded/)
+  })
+
+  it("refuses to assess anything without a model configured", async () => {
+    const service = new PriorArtService({ store, repoRoot: root })
+    await expect(service.requestEvaluation("u", "owner/name")).rejects.toThrow(
+      /evaluation is not available/,
+    )
+  })
+
+  /**
+   * The load-bearing rule survives the new path: accepting an `adopted` draft whose
+   * citations were all dropped is refused, exactly as a hand-written one would be.
+   */
+  it("refuses to accept a claim whose citations did not survive", async () => {
+    const service = serviceWith(
+      stubLlm({
+        suggestedStatus: "adopted",
+        evidence: [{ kind: "path", ref: "packages/core/invented.ts", note: null }],
+      }),
+    )
+    await service.requestEvaluation("u", "owner/name")
+    const ready = await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "ready",
+    )
+    const draft = ready[0]!.evaluation!.draft!
+
+    await expect(
+      service.adopt("u", ready[0]!.id, {
+        repo: ready[0]!.repo,
+        title: draft.title,
+        claim: draft.claim,
+        status: "adopted",
+        rationale: draft.rationale,
+        evidence: draft.evidence,
+      }),
+    ).rejects.toThrow(/needs at least one evidence reference/)
+  })
+
+  it("accepts an edited draft, marking the evaluation as accepted", async () => {
+    const service = serviceWith(
+      stubLlm({ evidence: [{ kind: "case", ref: "rec-017", note: null }] }),
+    )
+    await service.requestEvaluation("u", "owner/name")
+    const ready = await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "ready",
+    )
+    const draft = ready[0]!.evaluation!.draft!
+
+    const adopted = await service.adopt("u", ready[0]!.id, {
+      repo: ready[0]!.repo,
+      title: draft.title,
+      claim: draft.claim,
+      status: "partial",
+      rationale: draft.rationale,
+      notTaken: draft.notTaken,
+      evidence: draft.evidence,
+    })
+    expect(adopted.status).toBe("partial")
+    expect(adopted.evaluation?.state).toBe("accepted")
+    expect(adopted.unbacked).toBe(false)
+  })
+
+  it("dismisses by removing the entry, because it only ever held a URL", async () => {
+    const service = serviceWith(stubLlm({}))
+    const created = await service.requestEvaluation("u", "owner/name")
+    expect(await service.dismiss("u", created.id)).toBe(true)
+    expect(await service.list("u")).toEqual([])
+  })
+
+  /**
+   * A job can only advance while the process is alive, so anything left in flight
+   * at startup belongs to a run that died. Failing it offers the retry button;
+   * leaving it would spin forever.
+   */
+  it("fails evaluations a restart interrupted", async () => {
+    const service = serviceWith(stubLlm({}))
+    const created = await service.requestEvaluation("u", "owner/name")
+    await waitFor(
+      () => service.list("u"),
+      (entries) => entries[0]?.evaluation?.state === "ready",
+    )
+    // Simulate a job that was mid-flight when the process stopped.
+    await store.setEvaluation("u", created.id, {
+      state: "running",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    })
+
+    expect(await service.recoverInterrupted()).toBe(1)
+    const after = await service.list("u")
+    expect(after[0]!.evaluation?.state).toBe("failed")
+    expect(after[0]!.evaluation?.error).toMatch(/interrupted by a restart/)
+    // A finished entry is left alone.
+    expect(await service.recoverInterrupted()).toBe(0)
   })
 })

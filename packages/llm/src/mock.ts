@@ -238,8 +238,37 @@ export class RuleBasedLlm implements LlmPort {
         return this.understand(req.prompt)
       case "MemoryRerank":
         return this.rerank(req.prompt)
+      case "PriorArtEvaluation":
+        return this.assessPriorArt(req.prompt)
       default:
         throw new Error(`RuleBasedLlm does not implement schema "${req.schemaName}"`)
+    }
+  }
+
+  /**
+   * The prior-art stand-in.
+   *
+   * A rule-based model cannot read a repository and judge whether its ideas are
+   * worth borrowing — that is the whole task. So rather than fabricate an
+   * assessment, it returns the honest shape for "not assessed": `watched`, no
+   * citations, zero confidence. The flow completes end to end on mock providers
+   * (and CI therefore exercises it), while the draft says plainly that nothing was
+   * actually read.
+   */
+  private assessPriorArt(prompt: string): unknown {
+    const repo = /^Repository:\s*(\S+)/m.exec(prompt)?.[1] ?? "unknown/unknown"
+    const name = repo.split("/")[1] ?? repo
+    return {
+      title: name,
+      claim: `The rule-based stand-in did not read ${repo}; it cannot assess a repository.`,
+      rationale:
+        "No assessment was made. Configure a real model (MP_LLM_PROVIDER) to have the repository read and compared against this project.",
+      suggestedStatus: "watched",
+      notTaken: null,
+      killCriterion:
+        "Configure a real language model and run the assessment again; until then there is nothing to judge.",
+      evidence: [],
+      confidence: 0,
     }
   }
 

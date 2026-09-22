@@ -13,7 +13,10 @@ import {
 } from "@memory-palace/shared"
 import type { StorageBundle } from "@memory-palace/storage-pg"
 import { createStorage, readEmbeddingDim } from "@memory-palace/storage-pg"
-import { PriorArtService } from "./prior-art.js"
+import type { RepoFetcher } from "./github-repo.js"
+import { GitHubRepoFetcher } from "./github-repo.js"
+import { defaultRepoRoot, PriorArtService } from "./prior-art.js"
+import { PriorArtEvaluator } from "./prior-art-evaluate.js"
 
 /**
  * Composition root.
@@ -51,6 +54,11 @@ export interface RuntimeOptions {
    */
   llm?: LlmPort
   embeddings?: EmbeddingPort
+  /**
+   * Override how a candidate repository is read. Tests inject a stub so they never
+   * reach GitHub; a deployment could inject a mirror or a cache.
+   */
+  repoFetcher?: RepoFetcher
 }
 
 export function createRuntime(options: RuntimeOptions = {}): Runtime {
@@ -68,7 +76,12 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     embeddings: options.embeddings ?? bundle.embeddings,
   }
 
-  const priorArt = new PriorArtService(storage.priorArt)
+  const priorArt = new PriorArtService({
+    store: storage.priorArt,
+    evaluator: new PriorArtEvaluator(llm.llm, defaultRepoRoot()),
+    fetcher: options.repoFetcher ?? new GitHubRepoFetcher(),
+    logger,
+  })
 
   const palace = new MemoryPalace({
     store: storage.store,

@@ -81,6 +81,22 @@ function requireDate(value: string | undefined, field: string): string | undefin
  * unknown value should be named in the error, not silently coerced to a default
  * that then demands a kill criterion.
  */
+/**
+ * Accept whatever the user pasted.
+ *
+ * A GitHub URL is what someone has on their clipboard; `owner/name` is what the
+ * store keys on. Both are accepted, and anything else is left for validation to
+ * name rather than guessed at here.
+ */
+function repoFromInput(value: string): string {
+  const trimmed = value
+    .trim()
+    .replace(/^git@github\.com:/, "")
+    .replace(/\.git$/, "")
+  const fromUrl = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([^/\s]+\/[^/\s?#]+)/i.exec(trimmed)
+  return (fromUrl?.[1] ?? trimmed).trim()
+}
+
 function asPriorArtInput(body: Partial<PriorArtInput>): PriorArtInput {
   return {
     repo: body.repo ?? "",
@@ -236,21 +252,41 @@ export function createApp(runtime: Runtime): Hono {
     c.json({ entries: await runtime.priorArt.list(config.userId) }),
   )
 
+  /**
+   * Add a repository. The body is a URL and nothing else.
+   *
+   * The assessment is what the feature is for, so the caller is not asked for one;
+   * the entry lands in `unevaluated` and the work is queued. The response is
+   * immediate and carries the state, because the browser polls rather than waits.
+   */
   app.post("/api/prior-art", async (c) => {
-    const body = await c.req.json<Partial<PriorArtInput>>()
-    return c.json(await runtime.priorArt.add(config.userId, asPriorArtInput(body)))
+    const body = await c.req.json<{ repo?: string; url?: string }>()
+    const repo = repoFromInput(body.repo ?? body.url ?? "")
+    return c.json(await runtime.priorArt.requestEvaluation(config.userId, repo))
   })
 
-  app.patch("/api/prior-art/:id", async (c) => {
+  /** Re-run an assessment after a failure. Safe to call while one is live. */
+  app.post("/api/prior-art/:id/evaluate", async (c) =>
+    c.json(await runtime.priorArt.startEvaluation(config.userId, c.req.param("id"))),
+  )
+
+  /**
+   * Accept a draft, with the reviewer's edits.
+   *
+   * This is the only path that writes an assessment, and it is a human pressing a
+   * button. The draft is validated like any other entry — an `adopted` claim with
+   * no resolving citation is refused here exactly as it would be from a form.
+   */
+  app.post("/api/prior-art/:id/adopt", async (c) => {
     const body = await c.req.json<Partial<PriorArtInput>>()
     return c.json(
-      await runtime.priorArt.update(config.userId, c.req.param("id"), asPriorArtInput(body)),
+      await runtime.priorArt.adopt(config.userId, c.req.param("id"), asPriorArtInput(body)),
     )
   })
 
   app.delete("/api/prior-art/:id", async (c) => {
     const id = c.req.param("id")
-    if (!(await runtime.priorArt.remove(config.userId, id))) {
+    if (!(await runtime.priorArt.dismiss(config.userId, id))) {
       throw new NotFoundError("prior-art entry", id)
     }
     return c.json({ removed: true, id })

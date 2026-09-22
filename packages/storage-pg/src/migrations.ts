@@ -272,11 +272,38 @@ CREATE TABLE IF NOT EXISTS prior_art (
 CREATE INDEX IF NOT EXISTS prior_art_user_idx ON prior_art (user_id, added_at DESC);
 `
 
+/**
+ * Evaluation of a prior-art entry.
+ *
+ * The state lives on the row rather than in memory because the work is
+ * asynchronous: the browser polls it, the process may restart mid-run, and
+ * "running" has to be recoverable into "failed" rather than left forever.
+ *
+ * The draft is jsonb for the same reason `evidence` is: it is read and replaced
+ * whole, never queried across entries.
+ */
+const PRIOR_ART_EVALUATION = `
+ALTER TABLE prior_art
+  ADD COLUMN IF NOT EXISTS evaluation jsonb NOT NULL DEFAULT '{"state":"none"}'::jsonb;
+
+-- The pre-assessment state asserts nothing, so it is allowed alongside the four
+-- assessments. Existing rows keep their status.
+ALTER TABLE prior_art DROP CONSTRAINT IF EXISTS prior_art_status_check;
+ALTER TABLE prior_art ADD CONSTRAINT prior_art_status_check
+  CHECK (status IN ('unevaluated','adopted','partial','rejected','watched'));
+
+-- Finding the jobs to recover, and the entries the UI is waiting on, should not
+-- scan the whole table.
+CREATE INDEX IF NOT EXISTS prior_art_evaluation_idx
+  ON prior_art (user_id, (evaluation->>'state'));
+`
+
 /** Append-only: never edit an applied migration, always add a new one. */
 export const MIGRATIONS: Migration[] = [
   { id: "0001_initial_schema", sql: INITIAL_SCHEMA },
   { id: "0002_extraction_run_language_retries", sql: LANGUAGE_RETRIES },
   { id: "0003_prior_art", sql: PRIOR_ART },
+  { id: "0004_prior_art_evaluation", sql: PRIOR_ART_EVALUATION },
 ]
 
 /** SQL applied before any migration runs. */
