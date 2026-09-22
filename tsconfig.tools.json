@@ -11,6 +11,28 @@
   // files next to the sources would be worse than the gap it closes.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    // Map workspace packages to SOURCE, not to their built `dist/`.
+    //
+    // The tsx-based CLIs (migrate, demo, backup, embedding:*) import workspace
+    // packages, whose `exports` point at `dist/`. Without these paths every one
+    // of them fails with ERR_MODULE_NOT_FOUND until something has run a build —
+    // which is exactly how CI broke on its first substantive step, and how
+    // `pnpm setup` would fail on a fresh clone.
+    //
+    // Scoped to this config on purpose: adding `paths` to the root solution
+    // tsconfig breaks `tsc --build`, because the packages extend
+    // `tsconfig.base.json` and never see them.
+    //
+    // No `baseUrl`: TypeScript 7 removed it, and `paths` are resolved relative
+    // to this file anyway.
+    "paths": {
+      "@memory-palace/shared": ["./packages/shared/src/index.ts"],
+      "@memory-palace/core": ["./packages/core/src/index.ts"],
+      "@memory-palace/llm": ["./packages/llm/src/index.ts"],
+      "@memory-palace/storage-pg": ["./packages/storage-pg/src/index.ts"],
+      "@memory-palace/runtime": ["./packages/runtime/src/index.ts"],
+      "@memory-palace/test-support": ["./packages/test-support/src/index.ts"]
+    },
     "composite": false,
     "declaration": false,
     "declarationMap": false,

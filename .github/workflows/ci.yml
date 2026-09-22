@@ -51,11 +51,24 @@ jobs:
 
       - run: pnpm lint
 
-      # Migrations before the build: the schema is what the runtime asserts its
-      # configured embedding width against.
-      - run: pnpm migrate
-
+      # Build BEFORE migrating. Two reasons, and the first one broke this
+      # workflow on its first substantive step:
+      #
+      #  1. Until recently the tsx-based CLIs resolved workspace packages through
+      #     their `exports` field, i.e. to `dist/`, so `pnpm migrate` died with
+      #     ERR_MODULE_NOT_FOUND before a build had ever run. That is now fixed
+      #     at the source (tsconfig.tools.json maps the packages to `src`), and
+      #     this ordering is the second line of defence.
+      #  2. The runtime asserts its configured embedding width against the
+      #     schema, so the schema has to exist before anything runs.
       - run: pnpm build
+
+      # Typecheck the entry points that live outside the package graph: the CLIs
+      # and the eval harness. `pnpm test` transpiles them without typechecking,
+      # so this is the only thing that would catch a broken `pnpm demo`.
+      - run: pnpm typecheck:tools
+
+      - run: pnpm migrate
 
       - run: pnpm test
 
@@ -66,3 +79,16 @@ jobs:
       # demo twice, and nothing in the suite could see it.
       - run: pnpm demo --reset
       - run: pnpm demo
+
+      # A fresh clone has no dist/. This asserts the documented entry path works
+      # from that state, which is the failure CI itself hit and the README
+      # previously sent new users straight into.
+      - name: documented entry path works without a build
+        run: |
+          # Remove every build artifact, so the next commands run against the
+          # same state a fresh clone is in. Before tsconfig.tools.json mapped the
+          # workspace packages to src, `pnpm migrate` failed here — and this
+          # workflow aborted before reaching pnpm test at all.
+          rm -rf packages/*/dist apps/*/dist
+          pnpm migrate
+          pnpm demo --reset
