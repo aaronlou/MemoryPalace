@@ -32,6 +32,7 @@
     "lint:fix": "biome check --write .",
     "demo": "tsx --tsconfig tsconfig.tools.json scripts/demo.ts",
     "docs:check": "tsx --tsconfig tsconfig.tools.json scripts/readme-sync.ts",
+    "prior-art": "tsx --tsconfig tsconfig.tools.json scripts/prior-art.ts",
     "backup": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts",
     "restore": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts restore",
     "backup:check": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts check",

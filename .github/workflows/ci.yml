@@ -58,6 +58,12 @@ jobs:
       # and needs no database, so it runs first and fails fast.
       - run: pnpm docs:check
 
+      # The prior-art list claims that this repository embodies certain ideas, and
+      # names the file, dataset case or commit that proves it. Renaming a file
+      # should therefore fail the build rather than leave a stale claim on a page.
+      # No database needed — it resolves against the checkout.
+      - run: pnpm prior-art check
+
       # Build BEFORE migrating. Two reasons, and the first one broke this
       # workflow on its first substantive step:
       #

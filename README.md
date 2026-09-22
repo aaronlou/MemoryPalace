@@ -197,6 +197,30 @@ related".
 - **Your data is yours.** Markdown export you can read, JSON export you can
   restore, and deletion that actually deletes.
 
+### Prior art, and why it is a page rather than a wiki
+
+The projects this one read, and what it took from them — including what it
+deliberately did not. It is the **Prior art** tab of the web UI, and versioned
+content in `scripts/prior-art-seed.ts`.
+
+The rule that makes it worth reading: an entry marked `adopted` or `partial` must
+point at something in this repository — a file, optionally with a line anchor; a
+golden-dataset case id; or the commit that adopted the idea. `pnpm prior-art check`
+resolves every reference against the checkout, and CI runs it, so renaming a file
+fails the build instead of leaving a claim on a page that no longer describes
+anything. The page resolves them again when it loads and marks one that has since
+moved as broken.
+
+`watched` entries need a kill criterion, because "we are watching this" with no
+exit condition is how a list like this rots. `rejected` entries need no evidence:
+the reason *is* the evidence, and the entries that record a rejection are usually
+the more useful half.
+
+It is a separate table rather than part of the memory store, which matters more
+than it sounds. A memory answers "what should this agent know about the user"; an
+entry here answers "why is the algorithm like this". Filing one as the other would
+let a question about the user's preferences surface a system we merely read.
+
 ---
 
 ## Commands
@@ -224,6 +248,7 @@ related".
 | `pnpm eval --embedding mock\|real` | vary the embedder independently of the LLM |
 | `pnpm eval --filter rec-` | one suite only, when that is all that changed |
 | `pnpm eval:compare A B` | diff two eval runs — refuses to compare across a changed dataset or recall mode |
+| `pnpm prior-art check` / `seed` / `list` | the reference list behind the algorithm — `check` resolves every claim against this checkout |
 | `pnpm build` | typecheck and emit `dist/`, plus `scripts/` and `evals/` (`tsconfig.tools.json`) |
 | `pnpm lint` / `format` | Biome |
 
@@ -898,5 +923,9 @@ Honest scope of v0.1:
   requires it, but there is no auth or tenant isolation.
 - **Memory decay.** `archived` exists and is excluded from recall; automatic
   ageing-out does not.
+- **Assisted prior-art intake.** Adding a project to the Prior art tab is a form
+  today. Fetching the repository and drafting the claim is not built, and the
+  adoption decision would stay manual when it is: the assessment is a judgement,
+  and only the evidence has to be mechanically checkable.
 - **Scheduled backups.** Backup is a command you run, not a daemon; there is no
   cron or retention policy.
