@@ -154,6 +154,18 @@ export interface EvalReport {
      * "regression" is impossible after the fact.
      */
     dataset: string
+    /**
+     * Which embedding model produced these numbers.
+     *
+     * The embedder is a first-class quality variable — it decides recall — so a
+     * report that does not name it cannot be attributed. Its absence is how a
+     * baseline came to be published as "bge-m3" while the machine was actually
+     * running a different model with a different vector width.
+     */
+    embeddingModel: string
+    embeddingDim: number
+    /** Which recall path was measured. Fast, smart and auto answer differently. */
+    recallMode: "fast" | "smart" | "auto"
   }
   /**
    * Populated when the same evaluation was repeated.
@@ -481,6 +493,9 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
       adjudicationPrompt: "adjudication-v1",
       modelId: providers.counter.defaultModelId,
       dataset: datasetFingerprint(),
+      embeddingModel: providers.embeddings.modelId,
+      embeddingDim: providers.embeddings.dim,
+      recallMode: options.recallMode ?? "fast",
     },
   }
 }

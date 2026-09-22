@@ -66,6 +66,19 @@ if (a.fingerprint.extractionPrompt !== b.fingerprint.extractionPrompt)
 if (a.fingerprint.adjudicationPrompt !== b.fingerprint.adjudicationPrompt)
   mismatched.push("adjudication prompt")
 if (a.fingerprint.modelId !== b.fingerprint.modelId) mismatched.push("model")
+if (a.fingerprint.embeddingModel !== b.fingerprint.embeddingModel) {
+  mismatched.push(
+    `embedding model (${a.fingerprint.embeddingModel} vs ${b.fingerprint.embeddingModel})`,
+  )
+}
+if (a.fingerprint.embeddingDim !== b.fingerprint.embeddingDim) {
+  mismatched.push(
+    `embedding width (${a.fingerprint.embeddingDim}d vs ${b.fingerprint.embeddingDim}d)`,
+  )
+}
+if (a.fingerprint.recallMode !== b.fingerprint.recallMode) {
+  mismatched.push(`recall mode (${a.fingerprint.recallMode} vs ${b.fingerprint.recallMode})`)
+}
 
 // Runs recorded before this field existed have no value, so only a genuine
 // disagreement between two known values is worth reporting.

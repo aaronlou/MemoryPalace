@@ -33,7 +33,18 @@ pnpm dev:api                 # HTTP API + web UI + MCP over HTTP  → http://127
 pnpm dev:mcp                 # MCP server over stdio (what agents spawn)
 ```
 
-Or all of it at once: `pnpm setup`.
+**No build step is needed for any of this.** The CLIs and both servers run the
+TypeScript sources directly through `tsx`, and `tsconfig.tools.json` maps the
+workspace packages to `src/` so they resolve without `dist/` existing. That is
+deliberate: previously they resolved through each package's `exports` field to
+`dist/`, so every one of these commands failed with `ERR_MODULE_NOT_FOUND` on a
+fresh clone until something had run a build — which is how `pnpm migrate` broke
+CI on its first substantive step.
+
+Run `pnpm build` when you want the compiled artifacts, which the stdio MCP config
+below points at.
+
+Or all of it at once: `pnpm setup` (install → database → build → migrate).
 
 ### What you should see
 
@@ -221,19 +232,33 @@ something.
 
 ### Reference points
 
-| Provider | What it is | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
-|---|---|---|---|---|---|
-| `oracle` | returns the expected answer — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.857 | 100% |
-| `null` | stores nothing | **0.000** | 10% | 0.714 / 0.786 | 100% |
-| `mock` | rule-based, no API key | 0.750 | 30% | 0.750 / 0.857 | 100% |
-| **DeepSeek + bge-m3, `smart`** | the real stack | **0.967** | **100%** | **0.929 / 1.000** | **100%** |
-| **DeepSeek + bge-m3, `auto`** | what an agent gets when it passes no mode | — | — | 0.893 / 1.000 | 100% |
+| Provider / embedder | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
+|---|---|---|---|---|
+| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.857 | 100% |
+| `null` — stores nothing | **0.000** | 10% | 0.714 / 0.786 | 100% |
+| `mock` — rule-based, no API key | 0.750 | 30% | 0.750 / 0.857 | 100% |
+| DeepSeek + **bge-m3**, `smart` | 0.967 | 100% | 0.929 / 1.000 | 100% |
+| DeepSeek + **bge-m3**, `auto` | — | — | 0.893 / 1.000 | 100% |
+| DeepSeek + **embeddinggemma**, `smart` | **0.989** | 0.967 | 0.857 / 0.929 | 100% |
+| DeepSeek + **embeddinggemma**, `auto` | 0.899 | 0.933 | 0.821 / 0.929 | 100% |
+| DeepSeek + **embeddinggemma**, `fast` | — | — | 0.714 / 0.786 | 100% |
 
-The real stack is DeepSeek (`deepseek-chat` for extraction, `deepseek-reasoner`
-for adjudication) with bge-m3 served by Ollama, so no memory text leaves the
-machine. Roughly $0.019 per full evaluation, or $0.058 for `--repeat 3`. The
-offline rows are insensitive to the recall mode: without a model worth trusting,
-`fast`, `smart` and `auto` all answer from the scores alone.
+**Every row names its embedder, because the embedder decides recall.** The bge-m3
+rows were measured when that model was installed; the embeddinggemma rows were
+re-measured afterwards with `--repeat 3` and are reproducible on a machine that
+has `embeddinggemma` (621 MB) rather than `bge-m3` (1.2 GB). The gap between them
+— P@5 0.929 versus 0.857, R@5 1.000 versus 0.929 — is what the stronger retrieval
+model buys, and it is the whole reason to prefer it.
+
+`fast` agrees exactly across both embedders (0.714 / 0.786), which is expected:
+that path applies no reranker, so its recall is dominated by the lexical and
+entity routes rather than by semantic similarity.
+
+Reports now record the embedding model, its width and the recall path in their
+fingerprint, and `eval:compare` refuses to call two runs comparable when any of
+those differ. Before that fix a report could not be attributed to an embedder at
+all — which is how a baseline came to be published against a model that was no
+longer installed.
 
 The oracle and null runs are asserted in the test suite: if a perfect model does
 not score 1.0 and an empty one 0.0, then a real score like "F1 = 0.75" is
