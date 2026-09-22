@@ -13,6 +13,7 @@ import {
 } from "@memory-palace/shared"
 import type { StorageBundle } from "@memory-palace/storage-pg"
 import { createStorage, readEmbeddingDim } from "@memory-palace/storage-pg"
+import { PriorArtService } from "./prior-art.js"
 
 /**
  * Composition root.
@@ -27,6 +28,8 @@ export interface Runtime {
   palace: MemoryPalace
   storage: StorageBundle
   llm: LlmBundle
+  /** Prior art with every reference resolved against this checkout. */
+  priorArt: PriorArtService
   /** Verifies the configured embedding width against the actual schema. */
   assertSchemaMatchesConfig(): Promise<void>
   close(): Promise<void>
@@ -65,6 +68,8 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     embeddings: options.embeddings ?? bundle.embeddings,
   }
 
+  const priorArt = new PriorArtService(storage.priorArt)
+
   const palace = new MemoryPalace({
     store: storage.store,
     search: storage.search,
@@ -92,6 +97,7 @@ export function createRuntime(options: RuntimeOptions = {}): Runtime {
     palace,
     storage,
     llm,
+    priorArt,
     async assertSchemaMatchesConfig() {
       // pgvector needs a declared width to index, so the column is fixed and a
       // mismatch cannot be worked around at query time. Compare against what the

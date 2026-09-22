@@ -31,6 +31,8 @@ export interface TransferBundle {
   memoryEntities: Array<Record<string, unknown>>
   policies: Array<Record<string, unknown>>
   runs: Array<Record<string, unknown>>
+  /** Absent from bundles written before prior art existed; treated as empty. */
+  priorArt?: Array<Record<string, unknown>>
 }
 
 export interface ExportOptions {
@@ -43,7 +45,7 @@ export async function exportAll(
   userId: string,
   options: ExportOptions = {},
 ): Promise<TransferBundle> {
-  const [observations, memories, relations, entities, memoryEntities, policies, runs] =
+  const [observations, memories, relations, entities, memoryEntities, policies, runs, priorArt] =
     await Promise.all([
       db.query("SELECT * FROM observations WHERE user_id = $1 ORDER BY created_at", [userId]),
       db.query("SELECT * FROM memories WHERE user_id = $1 ORDER BY recorded_at", [userId]),
@@ -57,6 +59,7 @@ export async function exportAll(
       ),
       db.query("SELECT * FROM agent_policies WHERE user_id = $1", [userId]),
       db.query("SELECT * FROM extraction_runs WHERE user_id = $1 ORDER BY created_at", [userId]),
+      db.query("SELECT * FROM prior_art WHERE user_id = $1 ORDER BY added_at", [userId]),
     ])
 
   const bundle: TransferBundle = {
@@ -72,6 +75,7 @@ export async function exportAll(
     memoryEntities: memoryEntities.rows.map(stripNulls),
     policies: policies.rows.map(stripNulls),
     runs: runs.rows.map(stripNulls),
+    priorArt: priorArt.rows.map(stripNulls),
   }
 
   if (options.includeEmbeddings) {
@@ -102,6 +106,7 @@ export interface ImportResult {
   memoryEntities: number
   policies: number
   embeddings: number
+  priorArt: number
 }
 
 export interface ImportOptions {
@@ -140,6 +145,7 @@ export async function importAll(
       memoryEntities: 0,
       policies: 0,
       embeddings: 0,
+      priorArt: 0,
     }
 
     // Order matters: foreign keys require referenced rows to exist first.
@@ -174,6 +180,14 @@ export async function importAll(
       [],
       ["user_id", "agent_id"],
     )
+    // Absent from bundles written before prior art existed, so `?? []`.
+    result.priorArt = await insertRows(
+      client,
+      "prior_art",
+      bundle.priorArt ?? [],
+      [],
+      ["user_id", "repo"],
+    )
 
     // The schema_migrations table is intentionally NOT part of a bundle: schema
     // version is a property of the deployment, not of the user's data.
@@ -203,6 +217,10 @@ export async function wipeUser(
       [userId],
     )
     await c.query("DELETE FROM extraction_runs WHERE user_id = $1", [userId])
+    // Prior art has no foreign key to memories, so it needs its own delete. An
+    // "erase me" that left the reference list behind would be a lie, and the whole
+    // point of this layer is that "delete" really deletes.
+    await c.query("DELETE FROM prior_art WHERE user_id = $1", [userId])
     await c.query("DELETE FROM memories WHERE user_id = $1", [userId])
     await c.query("DELETE FROM observations WHERE user_id = $1", [userId])
     await c.query("DELETE FROM entities WHERE user_id = $1", [userId])

@@ -13,6 +13,8 @@ export * from "./policies.js"
 // Ports (implemented by infrastructure packages)
 export * from "./ports/llm.js"
 export * from "./ports/storage.js"
+// Prior art — the reference list behind the algorithm, kept out of `memories`
+export * from "./prior-art/types.js"
 export * from "./recall/assembly.js"
 export * from "./recall/pipeline.js"
 export * from "./recall/ranking.js"

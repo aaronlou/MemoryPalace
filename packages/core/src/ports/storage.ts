@@ -12,6 +12,7 @@ import type {
   ObservationStatus,
   RelationKind,
 } from "../memory/types.js"
+import type { PriorArtEntry, PriorArtInput } from "../prior-art/types.js"
 
 /**
  * Storage port. `packages/storage-pg` implements it; nothing in the domain
@@ -208,4 +209,20 @@ export interface MemorySearch {
   byEntity(userId: string, entityIds: string[], opts: SearchOptions): Promise<SearchHit[]>
   recent(userId: string, opts: SearchOptions): Promise<SearchHit[]>
   important(userId: string, opts: SearchOptions): Promise<SearchHit[]>
+}
+
+/**
+ * Prior-art storage.
+ *
+ * Its own port rather than methods on `MemoryStore`, because the two share no
+ * lifecycle: memories are adjudicated and superseded, entries here are edited
+ * and re-reviewed. `(userId, repo)` is unique, so re-adding a project updates
+ * the existing entry instead of creating a duplicate.
+ */
+export interface PriorArtStore {
+  list(userId: string): Promise<PriorArtEntry[]>
+  get(userId: string, id: string): Promise<PriorArtEntry | undefined>
+  /** Insert or replace by `(userId, repo)`. Returns the stored row. */
+  upsert(userId: string, input: PriorArtInput, id?: string): Promise<PriorArtEntry>
+  remove(userId: string, id: string): Promise<boolean>
 }

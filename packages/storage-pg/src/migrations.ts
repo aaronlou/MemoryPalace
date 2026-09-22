@@ -232,10 +232,51 @@ ALTER TABLE extraction_runs
   ADD COLUMN IF NOT EXISTS language_retries integer NOT NULL DEFAULT 0;
 `
 
+/**
+ * Prior art.
+ *
+ * Its own table, not rows in `memories`: this is the project's reference list,
+ * curated and reviewed alongside the code, whereas `memories` holds adjudicated,
+ * bi-temporal claims about the user. Filing one as the other would let a recall
+ * query about the user's preferences surface a system we merely read.
+ *
+ * `evidence` is jsonb rather than a join table: references are always read and
+ * written with their entry, never queried across entries, and keeping them in
+ * one column means an entry can never half-exist.
+ *
+ * The status CHECK mirrors `PRIOR_ART_STATUSES` in core. It is duplicated on
+ * purpose — the database is the last line of defence against a status the
+ * application has no branch for.
+ */
+const PRIOR_ART = `
+CREATE TABLE IF NOT EXISTS prior_art (
+  id                text PRIMARY KEY,
+  user_id           text NOT NULL,
+  repo              text NOT NULL,
+  url               text NOT NULL,
+  title             text NOT NULL,
+  claim             text NOT NULL,
+  status            text NOT NULL
+                      CHECK (status IN ('adopted','partial','rejected','watched')),
+  rationale         text NOT NULL,
+  not_taken         text,
+  kill_criterion    text,
+  source_revision   text,
+  evidence          jsonb NOT NULL DEFAULT '[]'::jsonb,
+  added_at          timestamptz NOT NULL DEFAULT now(),
+  reviewed_at       timestamptz NOT NULL DEFAULT now(),
+  -- Re-adding the same project updates it rather than doubling the list.
+  UNIQUE (user_id, repo)
+);
+
+CREATE INDEX IF NOT EXISTS prior_art_user_idx ON prior_art (user_id, added_at DESC);
+`
+
 /** Append-only: never edit an applied migration, always add a new one. */
 export const MIGRATIONS: Migration[] = [
   { id: "0001_initial_schema", sql: INITIAL_SCHEMA },
   { id: "0002_extraction_run_language_retries", sql: LANGUAGE_RETRIES },
+  { id: "0003_prior_art", sql: PRIOR_ART },
 ]
 
 /** SQL applied before any migration runs. */

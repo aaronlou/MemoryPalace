@@ -2,11 +2,18 @@ import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { extname, join, normalize, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { MemoryFilter, MemoryStatus, MemoryType } from "@memory-palace/core"
+import type {
+  MemoryFilter,
+  MemoryStatus,
+  MemoryType,
+  PriorArtInput,
+  PriorArtStatus,
+} from "@memory-palace/core"
 import type { Runtime } from "@memory-palace/runtime"
 import { registerTools, renderMarkdown, SERVER_INSTRUCTIONS } from "@memory-palace/runtime"
 import {
   isAppError,
+  NotFoundError,
   normaliseStatedDate,
   toErrorPayload,
   ValidationError,
@@ -62,6 +69,31 @@ function requireDate(value: string | undefined, field: string): string | undefin
     })
   }
   return iso
+}
+
+/**
+ * Shape a prior-art request body into an input.
+ *
+ * Absent fields become empty values rather than being rejected here, so
+ * validation can report every problem at once — "repo must look like
+ * owner/name; claim is required" — instead of failing on whichever key happens
+ * to be missing first. `status` is passed through as-is for the same reason: an
+ * unknown value should be named in the error, not silently coerced to a default
+ * that then demands a kill criterion.
+ */
+function asPriorArtInput(body: Partial<PriorArtInput>): PriorArtInput {
+  return {
+    repo: body.repo ?? "",
+    url: body.url,
+    title: body.title ?? "",
+    claim: body.claim ?? "",
+    status: (body.status ?? "") as PriorArtStatus,
+    rationale: body.rationale ?? "",
+    notTaken: body.notTaken,
+    killCriterion: body.killCriterion,
+    sourceRevision: body.sourceRevision,
+    evidence: body.evidence ?? [],
+  }
 }
 
 export function createApp(runtime: Runtime): Hono {
@@ -191,6 +223,37 @@ export function createApp(runtime: Runtime): Hono {
   app.delete("/api/memories/:id", async (c) => {
     const hard = c.req.query("hard") === "true"
     return c.json(await palace.forgetMemories(config.userId, [c.req.param("id")], { hard }))
+  })
+
+  // --- prior art ----------------------------------------------------------
+  //
+  // The reference list behind the algorithm. Each entry's evidence is resolved
+  // against this checkout on the way in — an unresolvable reference is a 400, so
+  // a claim nothing backs cannot be recorded — and again on the way out, so one
+  // whose artifact has since moved shows up as broken rather than staying on the
+  // page looking authoritative.
+  app.get("/api/prior-art", async (c) =>
+    c.json({ entries: await runtime.priorArt.list(config.userId) }),
+  )
+
+  app.post("/api/prior-art", async (c) => {
+    const body = await c.req.json<Partial<PriorArtInput>>()
+    return c.json(await runtime.priorArt.add(config.userId, asPriorArtInput(body)))
+  })
+
+  app.patch("/api/prior-art/:id", async (c) => {
+    const body = await c.req.json<Partial<PriorArtInput>>()
+    return c.json(
+      await runtime.priorArt.update(config.userId, c.req.param("id"), asPriorArtInput(body)),
+    )
+  })
+
+  app.delete("/api/prior-art/:id", async (c) => {
+    const id = c.req.param("id")
+    if (!(await runtime.priorArt.remove(config.userId, id))) {
+      throw new NotFoundError("prior-art entry", id)
+    }
+    return c.json({ removed: true, id })
   })
 
   // --- confirmation queue -------------------------------------------------

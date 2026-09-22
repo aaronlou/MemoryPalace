@@ -94,8 +94,10 @@ export async function schemaEmbeddingDim(
 /** Delete every row. Uses TRUNCATE so tests cannot leak state between files. */
 export async function truncateAll(db: PgDatabase): Promise<void> {
   await db.query(
+    // `prior_art` has no cascade path to `memories`, so it has to be named here
+    // explicitly — otherwise entries leak between test files.
     `TRUNCATE observations, memories, memory_relations, entities, memory_entities,
-              memory_sources, agent_policies, extraction_runs, memory_embeddings
+              memory_sources, agent_policies, extraction_runs, memory_embeddings, prior_art
      RESTART IDENTITY CASCADE`,
   )
 }
