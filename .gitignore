@@ -5,6 +5,24 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# Compiled output must never sit beside the source it was compiled from.
+#
+# ESM imports name a .js file (`import { createApp } from "./app.js"`) that the
+# toolchain maps back to app.ts. If a real app.js exists there, it wins — so a
+# build artifact committed next to its source silently *replaces* it at runtime,
+# for `tsx` and for vitest alike. That is not hypothetical: apps/api/src/app.js
+# was committed in the v0.1 baseline and shadowed app.ts, so the API tests were
+# exercising compiled output and edits to app.ts had no effect until it was
+# deleted.
+packages/*/src/**/*.js
+packages/*/src/**/*.js.map
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+apps/*/src/**/*.js
+apps/*/src/**/*.js.map
+apps/*/src/**/*.d.ts
+apps/*/src/**/*.d.ts.map
+
 # local dev Postgres cluster + pnpm store (kept inside the repo for self-containment)
 .local-pg/
 .pnpm-store/
