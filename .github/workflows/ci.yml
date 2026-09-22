@@ -36,7 +36,14 @@ jobs:
       MP_LOG_LEVEL: error
 
     steps:
+      # Full history, not the default shallow clone. `pnpm prior-art check` accepts
+      # a commit sha as evidence that an idea was adopted, and a checkout with
+      # fetch-depth 1 cannot verify one: the citation resolved locally and came
+      # back "no commit b82f4bd in this checkout" here. The check was right — CI
+      # simply had nothing to check against.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # Version comes from the `packageManager` field, so CI cannot drift from
       # what developers run locally.
