@@ -115,6 +115,23 @@
   box-sizing: border-box;
 }
 
+/*
+ * `hidden` has to win over any `display` an author rule sets.
+ *
+ * The user-agent stylesheet hides `[hidden]`, but author styles beat user-agent
+ * styles whatever the specificity — so an element that also declares `display`
+ * stays visible no matter how often the script sets the attribute. That is not
+ * theoretical: `.drawer` sets `display: flex`, so the detail panel could not be
+ * closed. Its close button worked perfectly; the panel simply ignored it.
+ *
+ * `!important` is the point here rather than a shortcut. There is no selector
+ * that should out-rank `hidden`, and a per-component fix (the old `.view[hidden]`
+ * rule) has to be repeated for every element anyone ever toggles.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
@@ -264,7 +281,7 @@ main {
 /* Deliberately NOT suppressing the focus ring on <main>: when a keyboard user
    activates the skip link, the ring is the only feedback that focus moved. */
 
-.view[hidden] { display: none; }
+/* `.view[hidden]` used to live here; the global `[hidden]` rule above covers it. */
 
 .lede { color: var(--muted); max-width: 68ch; }
 

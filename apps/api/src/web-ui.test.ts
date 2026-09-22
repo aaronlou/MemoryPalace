@@ -462,3 +462,40 @@ describe("applying a language", () => {
     expect(setLang("zh-Hans")).toBe("zh")
   })
 })
+
+/**
+ * `hidden` is how the script shows and hides everything — the drawer, its scrim,
+ * and every view. The user-agent rule that hides `[hidden]` loses to ANY author
+ * `display`, so an element that sets one stays visible however often the attribute
+ * is toggled. `.drawer` sets `display: flex` and had no guard, so the detail panel
+ * could not be closed: the button worked and the panel ignored it.
+ */
+describe("the hidden attribute actually hides", () => {
+  it("guards [hidden] against author display rules", () => {
+    expect(css).toMatch(/\[hidden\]\s*\{[^}]*display:\s*none\s*!important/)
+  })
+
+  it("toggles the drawer and scrim through hidden, so the guard is what hides them", () => {
+    expect(js).toContain('$("#drawer").hidden = true')
+    expect(js).toContain('$("#drawer").hidden = false')
+    expect(js).toContain('$("#drawer-scrim").hidden = true')
+  })
+
+  it("sets a display on elements that are hidden, which is why the guard is needed", () => {
+    // If this ever stops being true the guard is still harmless, but the reason
+    // for it has changed and the comment above it should be revisited.
+    expect(css).toMatch(/\.drawer\s*\{[^}]*display:\s*flex/)
+  })
+
+  /**
+   * The drawer title is the memory's type, written when it opens. Giving it a
+   * translation key made every language switch overwrite it with the static
+   * placeholder, so the panel headed itself "Memory" forever.
+   */
+  it("keeps the drawer title out of the translation walk", () => {
+    const title = /<h2 id="drawer-title"[^>]*>/.exec(html)?.[0] ?? ""
+    expect(title).not.toBe("")
+    expect(title).not.toContain("data-i18n")
+    expect(js).toContain('$("#drawer-title").textContent =')
+  })
+})

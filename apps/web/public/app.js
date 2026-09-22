@@ -234,6 +234,8 @@ async function loadPending() {
 
 async function openDetail(id) {
   STATE.lastFocus = document.activeElement
+  // Tracked so a language change can rebuild the drawer in the new language.
+  STATE.selected = id
   const memory = await api(`/api/memories/${id}`)
   const { history } = await api(`/api/memories/${id}/history`)
 
@@ -293,6 +295,7 @@ async function openDetail(id) {
 function closeDrawer() {
   $("#drawer").hidden = true
   $("#drawer-scrim").hidden = true
+  STATE.selected = null
   STATE.lastFocus?.focus?.()
 }
 
@@ -607,6 +610,17 @@ function initLang() {
     if (STATE.view === "timeline") renderTimeline().catch(reportError)
     if (STATE.view === "priorart") loadPriorArt().catch(reportError)
     if (STATE.view === "settings") loadPolicies().catch(reportError)
+    // The drawer is generated from data as well, so it is rebuilt — but a draft
+    // edit is carried across, because changing language should not discard work.
+    if (STATE.selected) {
+      const draft = $("#detail-content")?.value
+      openDetail(STATE.selected)
+        .then(() => {
+          const field = $("#detail-content")
+          if (field && draft !== undefined) field.value = draft
+        })
+        .catch(reportError)
+    }
   })
 }
 
