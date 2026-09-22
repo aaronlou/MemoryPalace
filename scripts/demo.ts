@@ -117,10 +117,16 @@ async function main(): Promise<void> {
   // the demo without --reset re-states the same change, which is correctly judged
   // "already known" and writes no new relation. The supersede either happened now
   // or happened last time, and in both cases this is what the store looks like.
+  //
+  // Matched on the entity, not on the sentence. A real extractor rewrites
+  // "我一直在用 Vue" as "用户一直在使用 Vue", so asserting the *input's* exact
+  // phrasing reported a false failure on the real stack while the supersede had
+  // in fact worked. A smoke test that fails when the system is right teaches you
+  // to ignore it.
   const aboutFramework = await rt.palace.listMemories(USER, {}, { limit: 100 })
   check(
     "the change superseded the earlier state rather than overwriting it",
-    aboutFramework.some((m) => m.content.includes("一直在用 Vue") && m.status === "superseded") &&
+    aboutFramework.some((m) => m.content.includes("Vue") && m.status === "superseded") &&
       aboutFramework.some((m) => m.content.includes("React") && m.status === "active"),
   )
 
