@@ -212,6 +212,7 @@ Agent 应该知道用户的什么」；这里的一条记录回答的是「算�
 | `pnpm db:start` / `db:stop` / `db:status` | 管理仓库本地的 Postgres 集群 |
 | `pnpm db:psql` | 打开 psql 交互终端 |
 | `pnpm db:reset` | 销毁并重建集群（**删除全部数据**） |
+| `pnpm db:test` | 创建并迁移测试套件专用的独立数据库 |
 | `pnpm migrate` | 应用待执行的迁移 |
 | `pnpm embedding:status` | 查看 schema 宽度、模型，以及多少条记忆有向量 |
 | `pnpm embedding:dim <N>` | 修改向量宽度（**丢弃已有向量**） |
@@ -239,7 +240,9 @@ Agent 应该知道用户的什么」；这里的一条记录回答的是「算�
 
 > **`pnpm eval` 和 `pnpm test` 都是破坏性的。** 两者都会清空 `DATABASE_URL` 指向的
 > 数据库里的每一张记忆表 —— `eval` 在每个用例前清一次以免互相污染，测试套件则通过
-> 自己的 fixture 清。对基准来说这是正确行为，对你的数据来说是错误行为：对开发库跑
+> 自己的 fixture 清。**`pnpm test` 默认使用一个独立的数据库**（`memory_palace_test`，
+> 由 `pnpm db:test` 创建），正是为了让跑测试不会删掉你的记忆；`pnpm eval` 仍然跟随
+> `DATABASE_URL`，请把它指向一个临时库。对基准来说这是正确行为，对你的数据来说是错误行为：对开发库跑
 > 任何一个都会把里面删光。这不是假设。本项目已经为此付过两次代价：一次是参考表在
 > 错误配置下被读成「文档写错了」，一次是真实用户最初的几条记忆（就在写这段警告的
 > 时候）。把 `DATABASE_URL` 指向一个临时库，或者先备份（`pnpm backup`），不要对

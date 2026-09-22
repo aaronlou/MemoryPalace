@@ -23,6 +23,7 @@
     "db:status": "./scripts/db-local.sh status",
     "db:psql": "./scripts/db-local.sh psql",
     "db:reset": "./scripts/db-local.sh reset",
+    "db:test": "./scripts/db-local.sh testdb",
     "migrate": "tsx --tsconfig tsconfig.tools.json packages/storage-pg/src/migrate-cli.ts",
     "dev:mcp": "tsx --tsconfig tsconfig.tools.json apps/mcp/src/main.ts",
     "dev:api": "tsx --tsconfig tsconfig.tools.json apps/api/src/main.ts",

@@ -1,4 +1,4 @@
-import { createTestRuntime } from "@memory-palace/test-support"
+import { createTestRuntime, TEST_DATABASE_URL } from "@memory-palace/test-support"
 import { beforeAll, describe, expect, it } from "vitest"
 import { runEval } from "./harness.js"
 import { matchSets, precisionAtK, precisionRecallF1, recallAtK } from "./metrics.js"
@@ -81,6 +81,11 @@ describe("harness calibration", () => {
   // width; otherwise a deployment that changed its embedding model would fail
   // calibration for the wrong reason.
   beforeAll(async () => {
+    // `runEval` builds its own config from the environment, so the database has to
+    // be pinned here too — otherwise the suite probes one database for its width
+    // and writes to another. It must never be the development database: runEval
+    // truncates every table.
+    process.env.DATABASE_URL ??= TEST_DATABASE_URL
     const probe = await createTestRuntime({ userId: "harness-width-probe" })
     process.env.MP_EMBEDDING_DIM = String(probe.config.embedding.dim)
     await probe.cleanup()

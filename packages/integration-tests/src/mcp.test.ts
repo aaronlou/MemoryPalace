@@ -2,7 +2,7 @@ import { createRequire } from "node:module"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { TestRuntime } from "@memory-palace/test-support"
-import { createTestRuntime, truncateAll } from "@memory-palace/test-support"
+import { createTestRuntime, TEST_DATABASE_URL, truncateAll } from "@memory-palace/test-support"
 import { Client } from "@modelcontextprotocol/client"
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
@@ -24,7 +24,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", ".
 const tsxCli = join(dirname(require.resolve("tsx/package.json")), "dist", "cli.mjs")
 
 const USER = "mcp-test-user"
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgresql://mp@127.0.0.1:55432/memory_palace"
+const DATABASE_URL = process.env.DATABASE_URL ?? TEST_DATABASE_URL
 
 let client: Client
 let transport: StdioClientTransport

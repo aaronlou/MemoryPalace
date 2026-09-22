@@ -32,7 +32,17 @@ export interface TestRuntimeOptions {
   embeddings?: EmbeddingPort
 }
 
-const DEFAULT_TEST_DB = "postgresql://mp@127.0.0.1:55432/memory_palace"
+/**
+ * The database tests run against when `DATABASE_URL` is not set.
+ *
+ * Deliberately NOT the development database. Tests truncate every table, so
+ * defaulting to `memory_palace` meant a plain `pnpm test` silently deleted the
+ * user's own memories — which happened twice during development, seeding included.
+ * A separate database makes that impossible instead of merely warned about; create
+ * it once with `pnpm db:test`.
+ */
+export const TEST_DATABASE_URL = "postgresql://mp@127.0.0.1:55432/memory_palace_test"
+const DEFAULT_TEST_DB = TEST_DATABASE_URL
 
 /**
  * Async because the embedding width is read from the schema.

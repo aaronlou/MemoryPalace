@@ -238,6 +238,7 @@ let a question about the user's preferences surface a system we merely read.
 | `pnpm db:start` / `db:stop` / `db:status` | manage the repo-local Postgres cluster |
 | `pnpm db:psql` | open a psql shell |
 | `pnpm db:reset` | destroy and recreate the cluster (**deletes all data**) |
+| `pnpm db:test` | create and migrate the separate database the test suite uses |
 | `pnpm migrate` | apply pending migrations |
 | `pnpm embedding:status` | schema width, model, and how many memories have a vector |
 | `pnpm embedding:dim <N>` | change the vector width (**discards existing vectors**) |
@@ -265,7 +266,10 @@ let a question about the user's preferences surface a system we merely read.
 
 > **`pnpm eval` and `pnpm test` are both destructive.** Each truncates every memory
 > table in whatever database `DATABASE_URL` points at — `eval` before each case so
-> one cannot leak into the next, the suite through its own fixtures. That is the
+> one cannot leak into the next, the suite through its own fixtures. **`pnpm test`
+> defaults to a separate database** (`memory_palace_test`, created by `pnpm db:test`)
+> precisely so that running the suite cannot delete your memories; `pnpm eval` still
+> follows `DATABASE_URL`, so point that at a scratch database. That is the
 > right behaviour for a benchmark and the wrong behaviour for your data: running
 > either against your development database deletes everything in it. This is not
 > hypothetical. It has cost this project its own reference table once (a run at the

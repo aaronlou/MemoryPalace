@@ -117,7 +117,28 @@ cmd_reset() {
   cmd_start
 }
 
+# The database the test suite runs against when DATABASE_URL is not set. Kept
+# separate from the development one because tests truncate every table.
+TESTDB="${MP_TEST_DB:-memory_palace_test}"
+
+cmd_testdb() {
+  is_running || { echo "postgres is not running; run: $0 start" >&2; exit 1; }
+  if psql -h 127.0.0.1 -p "$PORT" -U "$DBUSER" -d postgres -tAc \
+       "SELECT 1 FROM pg_database WHERE datname='$TESTDB'" | grep -q 1; then
+    echo "test database already exists: $TESTDB"
+  else
+    createdb -h 127.0.0.1 -p "$PORT" -U "$DBUSER" "$TESTDB"
+    echo "created test database: $TESTDB"
+  fi
+  # The schema is the test database's own business, so migrate it here rather than
+  # leaving the first `pnpm test` to fail on a missing table.
+  DATABASE_URL="postgresql://$DBUSER@127.0.0.1:$PORT/$TESTDB" \
+    pnpm migrate >/dev/null 2>&1 && echo "migrated $TESTDB"
+  echo "run tests against it with: DATABASE_URL=postgresql://$DBUSER@127.0.0.1:$PORT/$TESTDB pnpm test"
+}
+
 case "${1:-}" in
+  testdb) cmd_testdb ;;
   init)   cmd_init ;;
   start)  cmd_start ;;
   stop)   cmd_stop ;;
@@ -127,7 +148,7 @@ case "${1:-}" in
   url)    echo "postgresql://$DBUSER@127.0.0.1:$PORT/$DBNAME" ;;
   *)
     cat <<EOF
-usage: $0 {init|start|stop|status|reset|psql|url}
+usage: $0 {init|start|stop|status|reset|psql|url|testdb}
 
   init    initialise the cluster if missing
   start   start postgres, create the database and enable extensions
@@ -136,6 +157,7 @@ usage: $0 {init|start|stop|status|reset|psql|url}
   reset   destroy and recreate the cluster (DESTROYS ALL MEMORY DATA)
   psql    open a psql shell (extra args are forwarded)
   url     print the DATABASE_URL for this cluster
+  testdb  create the separate database the test suite uses
 
 env: MP_PGPORT=$PORT MP_DB=$DBNAME MP_USER=$DBUSER MP_PG_BIN=${MP_PG_BIN:-auto}
 EOF

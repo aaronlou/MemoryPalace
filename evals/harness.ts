@@ -285,11 +285,11 @@ export async function runEval(options: EvalOptions): Promise<EvalReport> {
   const startedAt = new Date()
   const userId = "eval-user"
 
-  const config = loadConfig({
-    databaseUrl: process.env.DATABASE_URL ?? "postgresql://mp@127.0.0.1:55432/memory_palace",
-    userId,
-    logLevel: "error",
-  })
+  // No database default here on purpose. This used to carry its own copy of the
+  // development URL, which let the harness test read the width from one database
+  // and evaluate against another. `loadConfig` owns that decision now, and the
+  // test suite points `DATABASE_URL` at its own database.
+  const config = loadConfig({ userId, logLevel: "error" })
 
   // Default: a real provider implies real embeddings; everything else stays offline.
   const embeddingChoice = options.embedding ?? (options.provider === "real" ? "real" : "mock")
