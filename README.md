@@ -1,5 +1,7 @@
 # Memory Palace
 
+**English** · [中文](./README.zh-CN.md)
+
 **Long-term memory infrastructure for AI agents — the same person's preferences,
 goals, decisions and history, available to every agent they use.**
 
@@ -58,7 +60,7 @@ ago?" — stay answerable from the same store.
 It also **checks the claims it prints** and exits non-zero if one of them is false,
 so it works as a smoke test rather than a wall of output to skim. That is not
 decorum: two real defects were hiding in that output, and both are described under
-"what the walkthrough found" below.
+"Two more bugs, found by running the walkthrough twice" below.
 
 ---
 
@@ -178,7 +180,7 @@ curl -s localhost:8787/api/recall -H 'content-type: application/json' \
 
 **3. Returning nothing is a correct answer.**
 A memory is only recalled if a query-conditional route actually matched it, and
-only above a similarity floor. `recent` and `improved` are priors, not evidence:
+only above a similarity floor. `recent` and `important` are priors, not evidence:
 if they could introduce candidates, every query would return something and an
 agent could never distinguish "nothing is known" from "here is something vaguely
 related".
@@ -346,8 +348,8 @@ Read them as a direction, not as a score.
 *`auto` is the row that matters, because it is the default.* It reaches within two
 points of the smart path's precision on this suite — P@5 0.938 against 0.958, both
 at R@5 1.000 and negative accuracy 100% — while escalating only the answers nothing
-corroborates. Both numbers are measured, not estimated; `pnpm eval --recall-mode
-auto` reproduces them.
+corroborates. Both numbers are measured, not estimated;
+`pnpm eval --recall-mode auto` reproduces them.
 
 *The two paths answer different questions.* Measured on the same suite, `fast` gives
 P@5 0.583 / R@5 0.625 / negative 100%: it declines more often and is never wrong
@@ -444,12 +446,19 @@ ranges over repeated runs and refuses to call an overlapping difference a change
   confirms them, so the mechanism is live only where a real reranker is running.
   Under the mock providers it is **inert by construction**: the mock embedder
   derives similarity from shared tokens, so it has no notion of a paraphrase, and
-  the check on it is that it changes nothing (measured: identical scores with the
-  margin at 0.15 and at 0). `rec-013` is the live case, and it fails offline on
-  purpose. Worth restating plainly, since the earlier version of this document got
-  it wrong: with bge-m3 the case is *not* below the floor (0.523) and never needed
-  rescuing — the mechanism's measured value on this suite is precision (60% → 100%
-  negative accuracy), not paraphrase recall.
+  the fast path never probes at all, so the margin cannot move the offline rows.
+  `rec-013` is the live case, and it fails offline on purpose.
+
+  Worth restating plainly, since an earlier version of this document got it wrong:
+  with bge-m3 at the old 0.45 floor that case scored 0.523 and never needed
+  rescuing, and for a while the honest reading was that the mechanism bought
+  precision (60% → 100% negative accuracy) rather than paraphrase recall. That is
+  no longer the whole story. The suite now carries ten cases placed *inside* the
+  band, and on those the mechanism buys recall: widening the margin from 0.15 to
+  0.25 took P@5 from 0.667 to 0.958 and R@5 to 1.000, with negative accuracy held
+  at 100%. The correction stands — the old example proved nothing about the floor —
+  but the conclusion drawn from it was a property of a 14-case suite that could not
+  reach the band in the first place.
 
 ### Language drift, and a correction to my own estimate
 
@@ -532,9 +541,10 @@ holds this content**, existing one included, and `remember` uses that row for
 everything downstream. The port says so, so a future adapter cannot quietly break
 it again.
 
-**A goal became a fact.** Step 6 printed `active Effect-TS goal memories: 0
-(should stay 1)` — in an output nobody had read closely, for as long as the demo
-existed. The check was reading the *type*; the type had drifted. The same fact,
+**A goal became a fact.** Step 6 printed
+`active Effect-TS goal memories: 0 (should stay 1)` — in an output nobody had read
+closely, for as long as the demo existed. The check was reading the *type*; the type
+had drifted. The same fact,
 re-worded, re-extracts under a different type ("我最近开始系统学习 Effect-TS"
 reads as a `goal`, "我最近在系统学习 Effect-TS" as a `fact`), and REFINE inherited
 the *candidate's* type — so paraphrasing yourself moved a memory between context
@@ -588,8 +598,8 @@ target. `ollama` runs a model locally so nothing leaves the machine; `bge-m3` is
 1024-dimensional and matches the schema out of the box.
 
 The embedding model is a **separate quality axis from the language model**, and
-the eval harness can vary them independently — `pnpm eval --provider oracle
---embedding real` isolates the embedder's contribution.
+the eval harness can vary them independently —
+`pnpm eval --provider oracle --embedding real` isolates the embedder's contribution.
 
 **Recall trust thresholds** — `MP_RECALL_MIN_RERANK_RELEVANCE` and
 `MP_RECALL_ESCALATE_BELOW_SEMANTIC` decide how much authority the reranker's
@@ -851,6 +861,14 @@ references, not by convention.
 - [Technology choices](./docs/01-技术选型评估-v0.1.md) — every selection with the
   rejected alternatives and why
 - [Development plan](./docs/02-开发计划-v0.1.md) — phases, acceptance criteria, risks
+
+**This README exists in two languages and they must stay consistent.** This is
+[`README.md`](./README.md); the Chinese one is
+[`README.zh-CN.md`](./README.zh-CN.md). Change one and change the other **in the
+same commit**; `pnpm docs:check` verifies that their structure still matches
+(headings, code blocks, tables, links, inline code) and runs in CI. It can only
+check structure — whether the prose actually says the same thing is still on
+whoever wrote it.
 
 ---
 

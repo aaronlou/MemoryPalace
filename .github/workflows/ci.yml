@@ -51,6 +51,13 @@ jobs:
 
       - run: pnpm lint
 
+      # The README is published in English and Chinese. Keeping them in step is
+      # otherwise a promise nobody can check, and a translation that quietly
+      # misses a section reads as complete. This compares what is language
+      # independent — heading levels, code blocks, tables, links, inline code —
+      # and needs no database, so it runs first and fails fast.
+      - run: pnpm docs:check
+
       # Build BEFORE migrating. Two reasons, and the first one broke this
       # workflow on its first substantive step:
       #

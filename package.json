@@ -31,6 +31,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "demo": "tsx --tsconfig tsconfig.tools.json scripts/demo.ts",
+    "docs:check": "tsx --tsconfig tsconfig.tools.json scripts/readme-sync.ts",
     "backup": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts",
     "restore": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts restore",
     "backup:check": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts check",
