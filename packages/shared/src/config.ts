@@ -311,7 +311,7 @@ export function loadConfig(overrides: ConfigOverrides = {}): Config {
         DEFAULT_SEMANTIC_FLOOR[embeddingProvider],
       ),
       minScore: floatEnv("MP_RECALL_MIN_SCORE", 0.18),
-      semanticRescueMargin: floatEnv("MP_RECALL_SEMANTIC_RESCUE_MARGIN", 0.15),
+      semanticRescueMargin: floatEnv("MP_RECALL_SEMANTIC_RESCUE_MARGIN", 0.25),
       rescueMinRelevance: floatEnv("MP_RECALL_RESCUE_MIN_RELEVANCE", 0.6),
       minRerankRelevance: floatEnv(
         "MP_RECALL_MIN_RERANK_RELEVANCE",

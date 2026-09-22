@@ -353,6 +353,14 @@ export class RecallPipeline {
     // A memory may only be recalled if a query-conditional route actually
     // matched it. `recent` and `important` match everything, so letting them
     // introduce candidates would make "no relevant memories" unreachable.
+    //
+    // Note the test is the route's NAME, not its score, and that is deliberate.
+    // The lexical route can match on token overlap while scoring 0 — for CJK,
+    // `ts_rank` is 0 because the `simple` config does not segment, `similarity`
+    // is ~0, and the ILIKE term needs the whole query. Requiring `score > 0`
+    // looks like a tightening but is not: those rows did match the query
+    // conditionally, and dropping them broke history recall and rec-002, which
+    // is how this was caught. The score is uninformative here, not the match.
     const qualifying = new Set<string>(RECALL_DEFAULTS.qualifyingRoutes as readonly string[])
     const fused = allFused.filter((item) => item.routes.some((r) => qualifying.has(r.route)))
     const candidatesConsidered = allFused.length

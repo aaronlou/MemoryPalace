@@ -124,14 +124,17 @@ describe("harness calibration", () => {
    *
    * They are not configuration-independent: the similarity floor is chosen per
    * embedding provider, so `MP_EMBEDDING_PROVIDER` silently decides what these
-   * numbers are — 0.750 / 0.857 at the shipped default of 0.15, but 0.714 / 0.786
-   * at the 0.65 floor a real embedder selects. That is how this table came to be
-   * "corrected" to the wrong values once already, by comparing a developer's
-   * `.env` against a table measured on the defaults.
+   * numbers are — and a developer's `.env` once made them look like a
+   * documentation error when the table was right and the machine was not on the
+   * defaults. So the floor is pinned here rather than inherited, which makes the
+   * assertion the same on every machine and the dependency explicit.
    *
-   * So the floor is pinned here rather than inherited. That makes the assertion
-   * the same on every machine, and makes the dependency explicit instead of
-   * hiding it behind whatever happens to be configured.
+   * The values moved from 0.750 / 0.857 to 0.583 / 0.625 for one reason: the
+   * suite grew ten cases (rec-015 .. rec-024) placed *inside* the probe band, and
+   * the offline stack is a hashing bag-of-tokens — it has no notion of a
+   * paraphrase, which is exactly what those cases require. The suite got harder;
+   * the system did not get worse. Telling those two apart is the whole reason the
+   * dataset hash is in the report fingerprint.
    */
   it("reproduces the published offline recall rows at the default floor", async () => {
     const previous = process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY
@@ -140,16 +143,26 @@ describe("harness calibration", () => {
       for (const provider of ["oracle", "mock"] as const) {
         const report = await runEval({ provider, filter: "rec-", label: `${provider}-recall` })
 
-        expect(report.recall.precisionAtK).toBeCloseTo(0.75, 3)
-        expect(report.recall.recallAtK).toBeCloseTo(0.857, 3)
+        expect(report.recall.precisionAtK).toBeCloseTo(0.604, 3)
+        expect(report.recall.recallAtK).toBeCloseTo(0.667, 3)
         expect(report.recall.negativeAccuracy).toBeCloseTo(1, 5)
 
-        // The two misses are structural and the README names them: each needs a
-        // term that appears only in the memory, never in the query. Pinning the
-        // list means a case that starts failing surfaces as a changed claim
-        // rather than as a quietly lower average.
+        // Eight misses, and the list is the point: every one needs a term that
+        // appears only in the memory and never in the query, so a hashing
+        // embedder cannot reach it and the lexical and entity routes have no
+        // shared token to match. Pinning the list means a case that starts
+        // failing surfaces as a changed claim rather than a quietly lower mean.
         const missed = report.recall.cases.filter((c) => c.recallAtK < 1).map((c) => c.id)
-        expect(missed).toEqual(["rec-003", "rec-013"])
+        expect(missed).toEqual([
+          "rec-003",
+          "rec-013",
+          "rec-015",
+          "rec-016",
+          "rec-017",
+          "rec-019",
+          "rec-022",
+          "rec-023",
+        ])
       }
     } finally {
       if (previous === undefined) delete process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY

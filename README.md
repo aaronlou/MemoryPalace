@@ -8,7 +8,7 @@ in how much is stored; it is in whether an agent retrieves the right thing at th
 right moment, and whether it can tell what is *currently* true from what *used* to
 be.
 
-> Status: v0.1, working end to end. 182 tests green. The mock providers let the
+> Status: v0.1, working end to end. 191 tests green. The mock providers let the
 > whole system — including the evaluation suite — run with no API key and no
 > network. Cold start from an empty directory takes about 90 seconds, of which
 > most is dependency installation. CI runs lint, the build, the whole suite and
@@ -238,32 +238,38 @@ related".
 > a backup first (`pnpm backup`), and do not run it against anything you care
 > about.
 
-Three suites over a 36-case golden dataset, calibrated so the numbers mean
+Three suites over a 46-case golden dataset, calibrated so the numbers mean
 something.
 
 ### Reference points
 
 | Provider / embedder | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
 |---|---|---|---|---|
-| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.750 / 0.857 | 100% |
-| `null` — stores nothing | **0.000** | 10% | 0.714 / 0.786 | 100% |
-| `mock` — rule-based, no API key | 0.750 | 30% | 0.750 / 0.857 | 100% |
+| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.604 / 0.667 | 100% |
+| `null` — extracts nothing | **0.000** | 10% | see note | see note |
+| `mock` — rule-based, no API key | 0.750 | 30% | 0.604 / 0.667 | 100% |
 | DeepSeek + **bge-m3**, `smart` | 0.967 | 100% | 0.929 / 1.000 | 100% |
 | DeepSeek + **bge-m3**, `auto` | — | — | 0.893 / 1.000 | 100% |
-| DeepSeek + **embeddinggemma**, `smart` | **0.989** | 0.967 | 0.857 / 0.929 | 100% |
-| DeepSeek + **embeddinggemma**, `auto` | 0.899 | 0.933 | 0.821 / 0.929 | 100% |
-| DeepSeek + **embeddinggemma**, `fast` | — | — | 0.714 / 0.786 | 100% |
+| DeepSeek + **embeddinggemma**, `smart` | **0.989** | 0.967 | **0.958 / 1.000** | 100% |
+| DeepSeek + **embeddinggemma**, `auto` | 0.899 | 0.933 | **0.938 / 1.000** | 100% |
+| DeepSeek + **embeddinggemma**, `fast` | — | — | 0.583 / 0.625 | 100% |
 
 **Every row names its embedder, because the embedder decides recall.** The bge-m3
-rows were measured when that model was installed; the embeddinggemma rows were
-re-measured afterwards with `--repeat 3` and are reproducible on a machine that
-has `embeddinggemma` (621 MB) rather than `bge-m3` (1.2 GB). The gap between them
-— P@5 0.929 versus 0.857, R@5 1.000 versus 0.929 — is what the stronger retrieval
-model buys, and it is the whole reason to prefer it.
+rows were measured when that model was installed, on an earlier 14-case recall
+suite; the embeddinggemma rows are from the current 24-case suite and are
+reproducible on a machine that has `embeddinggemma` (621 MB) rather than `bge-m3`
+(1.2 GB). The two are not comparable — different exam, different embedder — and
+the report fingerprint now records enough (embedder, width, mode, thresholds,
+dataset hash) that `eval:compare` will say so rather than score the difference.
 
 The three offline rows were measured with the repository's default configuration,
 which is also what CI runs. They are not configuration-independent — see the first
 note below.
+
+`fast` applies no reranker, so its recall comes from the lexical and entity routes
+and the embedding model cannot help it: P@5 0.583 against `smart`'s 0.958.
+Essentially everything `smart` buys is bought by the reranker reaching memories
+that share no surface form with the query at all.
 
 Reports now record the embedding model, its width and the recall path in their
 fingerprint, and `eval:compare` refuses to call two runs comparable when any of
@@ -276,53 +282,67 @@ not score 1.0 and an empty one 0.0, then a real score like "F1 = 0.75" is
 measuring the harness rather than the system. The offline recall rows are pinned
 to a fixed similarity floor so that they measure the same thing on every machine.
 
-**Six honest notes about this table.**
+**Nine honest notes about this table.**
 
-*The offline rows are stated at the default floor, and a real embedder moves
-them.* The similarity floor is chosen per embedding provider
-(`DEFAULT_SEMANTIC_FLOOR` in `config.ts`), so it is part of what these numbers
-mean, not a detail behind them. Everything in the table above is at the shipped
-default — `MP_EMBEDDING_PROVIDER=mock`, floor 0.15. These rows are `oracle` and
-`mock`, which always run the hashing stand-in embedder, yet they still inherit the
-floor named by `MP_EMBEDDING_PROVIDER`: point it at `ollama` (floor 0.65) and they
-become 0.714 / 0.786, because the higher floor drops one more paraphrase from
-`fast`. Both readings are correct; they are answers to different questions. If you
-compare your own run against this table, check the floor first — a disagreement
-here is the configuration talking, not a regression.
+*`null`'s recall columns are blank on purpose, not because it scored well.*
+`NullEmbedding` returns all-zero vectors, and cosine distance between two zero
+vectors is undefined — so pgvector's ordering over them is arbitrary. Run anyway it
+reports P@5 0.639, R@5 1.000, negative accuracy 16.7% and a 25% forbidden-hit rate:
+that is what "arbitrary" looks like, and the forbidden hits are a reminder that **no
+similarity floor can save you from an embedder that returns zeros**, because the
+floors all assume distance means something. That provider calibrates the *extraction*
+metric, where 0.000 is the answer that matters.
 
-*The offline recall numbers moved in two directions at once, and both are
-explained.* The generator moved them **down**: the recall suite gained `rec-013`,
-a hard paraphrase the offline stack **structurally cannot pass**, because a
-hashing embedder has no notion of a paraphrase. `rec-014` is the matching guard —
-a negative the offline stack does pass. Then the implementation moved them **up**:
-`includeHistory` no longer clamps the validity window to now (see below), which
-fixed `rec-010`, a case that had been failing since the suite was written. Net,
-`mock` and `oracle` went from 0.750 / 0.833 to **0.750 / 0.857** — the dataset got
-one case harder and the system got one case better. At the default floor the
-offline stack misses exactly two cases, `rec-003` and `rec-013`; both need a term
-that appears only in the memory and never in the query.
+*The offline rows are stated at the shipped thresholds.* The similarity floor is
+chosen per embedding provider (`DEFAULT_SEMANTIC_FLOOR` in `config.ts`), so it is
+part of what these numbers mean. These rows are `oracle` and `mock`, which always
+run the hashing stand-in embedder, yet they still inherit the floor named by
+`MP_EMBEDDING_PROVIDER`: point it at `ollama` (floor 0.65) rather than the `mock`
+default (0.15) and the same suite scores differently, because a higher floor drops
+more paraphrases from `fast`. Both readings are correct; they answer different
+questions. If you compare your own run against this table, check the thresholds
+first — `eval:compare` now reports every one that differs, so a disagreement here
+is the configuration talking, not a regression.
 
-*The real-stack numbers are all from the same 14-case recall suite*, measured with
-`--repeat 3` for `smart` (P@5 0.929 over three runs, stable) and single runs for
-`auto`/`fast`. Comparing them to the 0.833 / 0.917 published earlier would be
-comparing different exams: the suite has changed, the embedder has changed, and
-the recall path has changed.
+*The recall suite has 24 cases, and the last ten are placed by measurement.* Cases
+`rec-015` .. `rec-024` sit *inside* the band the smart path probes (the floor minus
+`semanticRescueMargin`), at measured cosines between 0.408 and 0.605, where the
+earlier cases sat either far above the floor or far below it. A suite that cannot
+reach the band cannot tell you whether widening it is safe — which is exactly the
+question that made them necessary. The set is a matched pair at an identical
+0.429: `rec-017` (a documentation-style preference, must be recalled) and `rec-020`
+(a cat's name, must not). No threshold can satisfy both, so the pair only passes if
+the system is judging relevance rather than distance.
 
-*`auto` is the row that matters, because it is the default.* It reaches the smart
-path's precision on this suite — P@5 0.893, R@5 1.000, negative accuracy 100% — for
-**15 model calls instead of 27**, because it only escalates answers that nothing
+*The offline rows fell from 0.750 / 0.857 to 0.604 / 0.667 when those ten cases
+arrived.* That is the dataset getting harder, not the system getting worse, and the
+distinction is why the dataset hash sits in the report fingerprint. Every one of
+the nine cases the offline stack now misses needs a term that appears only in the
+memory and never in the query; a hashing bag-of-tokens has no notion of a
+paraphrase, so it structurally cannot reach them. `rec-014` is the matching guard —
+a negative the offline stack does pass.
+
+*The bge-m3 rows are from an earlier, 14-case suite and are not comparable to the
+rest.* They were measured while that model was installed. Comparing them to the
+current embeddinggemma rows would be comparing different exams — different embedder,
+different dataset — which is the mistake the fingerprint now exists to prevent.
+Read them as a direction, not as a score.
+
+*`auto` is the row that matters, because it is the default.* It reaches within two
+points of the smart path's precision on this suite — P@5 0.938 against 0.958, both
+at R@5 1.000 and negative accuracy 100% — while escalating only the answers nothing
 corroborates. Both numbers are measured, not estimated; `pnpm eval --recall-mode
 auto` reproduces them.
 
-*The two paths answer different questions, and `fast` is now precision-first.*
-Measured on the same suite, `fast` gives P@5 0.714 / R@5 0.786 / negative 100%: it
-declines more often and is never wrong about what it returns. `smart` gives up some
-precision to answer more. Neither is "the" score, which is why the report prints
-the mode it measured.
+*The two paths answer different questions.* Measured on the same suite, `fast` gives
+P@5 0.583 / R@5 0.625 / negative 100%: it declines more often and is never wrong
+about what it returns. `smart` gives up some precision to answer more — 0.958 at
+R@5 1.000. Neither is "the" score, which is why the report prints the mode it
+measured, and why `recallMode` is in the fingerprint.
 
-*The mock scores 0.750, not the 0.900 it scored on the first version of the
-dataset.* That earlier number was inflated: the dataset had been written while
-looking at the rule-based extractor's output, so it rewarded that extractor's
+*The mock scores 0.750 on extraction, not the 0.900 it scored on the first version
+of the dataset.* That earlier number was inflated: the dataset had been written
+while looking at the rule-based extractor's output, so it rewarded that extractor's
 phrasing. In particular it expected **one** memory where a compound sentence
 contains two facts, while the extraction prompt explicitly says "one idea per
 memory, split compound statements". The model was following the instruction and
