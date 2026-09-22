@@ -120,31 +120,40 @@ describe("harness calibration", () => {
   }, 120_000)
 
   /**
-   * The README publishes the offline recall figures, and nothing pinned them.
-   * They drifted: the table claimed 0.750 / 0.857 for `oracle` and `mock`, while
-   * the command reported 0.714 / 0.786 — and no commit ever produced 0.857, so a
-   * number nobody could reproduce sat in the README as a benchmark.
+   * The README publishes the offline recall rows, and nothing pinned them.
    *
-   * These are not quality gates. The stand-in embedder is a hash, so its recall
-   * says nothing about the product; the real stack is the quality measurement.
-   * What is asserted here is fidelity — that the table matches what the command
-   * prints. If this fails, either the README or the dataset moved, and the two
-   * have to move together.
+   * They are not configuration-independent: the similarity floor is chosen per
+   * embedding provider, so `MP_EMBEDDING_PROVIDER` silently decides what these
+   * numbers are — 0.750 / 0.857 at the shipped default of 0.15, but 0.714 / 0.786
+   * at the 0.65 floor a real embedder selects. That is how this table came to be
+   * "corrected" to the wrong values once already, by comparing a developer's
+   * `.env` against a table measured on the defaults.
+   *
+   * So the floor is pinned here rather than inherited. That makes the assertion
+   * the same on every machine, and makes the dependency explicit instead of
+   * hiding it behind whatever happens to be configured.
    */
-  it("reproduces the offline recall figures the README publishes", async () => {
-    for (const provider of ["oracle", "mock"] as const) {
-      const report = await runEval({ provider, filter: "rec-", label: `${provider}-recall` })
+  it("reproduces the published offline recall rows at the default floor", async () => {
+    const previous = process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY
+    process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY = "0.15"
+    try {
+      for (const provider of ["oracle", "mock"] as const) {
+        const report = await runEval({ provider, filter: "rec-", label: `${provider}-recall` })
 
-      expect(report.recall.precisionAtK).toBeCloseTo(0.714, 3)
-      expect(report.recall.recallAtK).toBeCloseTo(0.786, 3)
-      expect(report.recall.negativeAccuracy).toBeCloseTo(1, 5)
+        expect(report.recall.precisionAtK).toBeCloseTo(0.75, 3)
+        expect(report.recall.recallAtK).toBeCloseTo(0.857, 3)
+        expect(report.recall.negativeAccuracy).toBeCloseTo(1, 5)
 
-      // The misses are structural and the README names them: each needs a term
-      // that appears only in the memory, never in the query. Pinning the list
-      // means a case that starts failing shows up as a changed claim rather than
-      // a quietly lower average.
-      const missed = report.recall.cases.filter((c) => c.recallAtK < 1).map((c) => c.id)
-      expect(missed).toEqual(["rec-003", "rec-010", "rec-013"])
+        // The two misses are structural and the README names them: each needs a
+        // term that appears only in the memory, never in the query. Pinning the
+        // list means a case that starts failing surfaces as a changed claim
+        // rather than as a quietly lower average.
+        const missed = report.recall.cases.filter((c) => c.recallAtK < 1).map((c) => c.id)
+        expect(missed).toEqual(["rec-003", "rec-013"])
+      }
+    } finally {
+      if (previous === undefined) delete process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY
+      else process.env.MP_RECALL_MIN_SEMANTIC_SIMILARITY = previous
     }
   }, 180_000)
 })
