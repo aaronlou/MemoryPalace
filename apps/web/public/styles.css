@@ -634,3 +634,22 @@ table.data td.num { font-variant-numeric: tabular-nums; text-align: right; }
     scroll-behavior: auto !important;
   }
 }
+
+/* Prior art: one row per evidence reference, chip shows whether it still resolves. */
+.evidence {
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.78rem;
+}
+.evidence li {
+  display: flex;
+  gap: var(--space-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.evidence code {
+  word-break: break-all;
+}

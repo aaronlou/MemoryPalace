@@ -27,6 +27,7 @@ const STATE = {
   memories: [],
   pending: [],
   stats: null,
+  priorArt: [],
   loading: false,
   selected: null,
   lastFocus: null,
@@ -442,6 +443,7 @@ function switchView(view) {
   }
   for (const section of $$(".view")) section.hidden = section.id !== `view-${view}`
   if (view === "timeline") renderTimeline().catch(reportError)
+  if (view === "priorart") loadPriorArt().catch(reportError)
   if (view === "settings") loadPolicies().catch(reportError)
 }
 
@@ -465,6 +467,129 @@ async function loadPolicies() {
       )
       .join("")}</tbody>
   </table>`
+}
+
+// ---------------------------------------------------------------- prior art --
+
+const PRIOR_ART_CHIP = {
+  adopted: "chip--ok",
+  partial: "chip--warn",
+  watched: "chip--type",
+  rejected: "",
+}
+
+const EVIDENCE_LABEL = { path: "file", case: "case", commit: "commit" }
+
+/**
+ * Parse the evidence box: one reference per line.
+ *
+ * `case:` and `commit:` are spelled out because a bare `rec-017` and a bare sha
+ * are each indistinguishable from a filename. Anything unprefixed is a path.
+ */
+function parseEvidence(text) {
+  const out = []
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim()
+    if (!line) continue
+    if (line.startsWith("case:")) out.push({ kind: "case", ref: line.slice(5).trim() })
+    else if (line.startsWith("commit:")) out.push({ kind: "commit", ref: line.slice(7).trim() })
+    else if (line.startsWith("path:")) out.push({ kind: "path", ref: line.slice(5).trim() })
+    else out.push({ kind: "path", ref: line })
+  }
+  return out
+}
+
+function renderPriorArt(entries) {
+  const el = $("#priorart-list")
+  if (entries.length === 0) {
+    el.innerHTML =
+      '<p class="empty">No projects recorded yet. Add one above — including the ones you decided against, which are the most useful entries here.</p>'
+    return
+  }
+  el.innerHTML = `<div class="list">${entries.map(renderPriorArtEntry).join("")}</div>`
+}
+
+function renderPriorArtEntry(entry) {
+  const evidence = entry.evidence.length
+    ? `<ul class="evidence">${entry.evidence
+        .map(
+          (e) => `<li>
+            <span class="chip ${e.resolved ? "chip--ok" : "chip--danger"}">${esc(
+              EVIDENCE_LABEL[e.kind] ?? e.kind,
+            )}</span>
+            <code>${esc(e.detail ?? e.ref)}</code>
+            ${e.problem ? `<span class="hint"> — ${esc(e.problem)}</span>` : ""}
+          </li>`,
+        )
+        .join("")}</ul>`
+    : '<p class="hint">No evidence recorded. A claim of this kind has nothing behind it.</p>'
+
+  return `<article class="item">
+    <div class="item__main">
+      <div class="item__meta">
+        <span class="chip ${PRIOR_ART_CHIP[entry.status] ?? ""}">${esc(entry.status)}</span>
+        <a href="${esc(entry.url)}" target="_blank" rel="noreferrer noopener">${esc(entry.repo)}</a>
+        <span class="hint">added ${esc(entry.addedAt.slice(0, 10))} · reviewed ${esc(
+          entry.reviewedAt.slice(0, 10),
+        )}</span>
+      </div>
+      <div class="item__content">
+        <strong>${esc(entry.title)}</strong>
+        <p>${esc(entry.claim)}</p>
+        <p>${esc(entry.rationale)}</p>
+        ${entry.notTaken ? `<p><em>Not taken:</em> ${esc(entry.notTaken)}</p>` : ""}
+        ${entry.killCriterion ? `<p><em>Kill criterion:</em> ${esc(entry.killCriterion)}</p>` : ""}
+        ${
+          entry.unbacked
+            ? `<p class="hint">Marked <em>${esc(entry.status)}</em> but no reference resolves — this claim is unbacked.</p>`
+            : ""
+        }
+        ${evidence}
+      </div>
+    </div>
+    <div class="item__actions">
+      <button class="btn btn--sm btn--danger" data-remove-priorart="${esc(entry.id)}">Remove</button>
+    </div>
+  </article>`
+}
+
+async function loadPriorArt() {
+  const { entries } = await api("/api/prior-art")
+  STATE.priorArt = entries
+  renderPriorArt(entries)
+}
+
+async function addPriorArt(form) {
+  const value = (name) => form.elements[name]?.value ?? ""
+  await api("/api/prior-art", {
+    method: "POST",
+    body: JSON.stringify({
+      repo: value("repo").trim(),
+      title: value("title").trim(),
+      status: value("status"),
+      claim: value("claim").trim(),
+      rationale: value("rationale").trim(),
+      notTaken: value("notTaken").trim() || undefined,
+      killCriterion: value("killCriterion").trim() || undefined,
+      evidence: parseEvidence(value("evidence")),
+    }),
+  })
+  form.reset()
+  toast("Project added")
+  await loadPriorArt()
+}
+
+async function removePriorArt(id) {
+  const entry = (STATE.priorArt ?? []).find((e) => e.id === id)
+  const ok = window.confirm(
+    `Remove ${entry?.repo ?? "this project"} from the reference list?\n\nThis only removes the entry — nothing in the repository changes.`,
+  )
+  if (!ok) return
+  // Force rather than archive: a reference list has no history worth keeping, and
+  // the entry is one `git` command away from being re-added.
+  await api(`/api/prior-art/${id}`, { method: "DELETE" })
+  toast("Removed")
+  await loadPriorArt()
 }
 
 function initTheme() {
@@ -619,6 +744,16 @@ function init() {
     } catch (error) {
       reportError(error)
     }
+  })
+
+  // Prior art: add and remove
+  $("#priorart-form").addEventListener("submit", (event) => {
+    event.preventDefault()
+    addPriorArt(event.currentTarget).catch(reportError)
+  })
+  $("#priorart-list").addEventListener("click", (event) => {
+    const id = event.target.closest("[data-remove-priorart]")?.dataset.removePriorart
+    if (id) removePriorArt(id).catch(reportError)
   })
 
   refresh()

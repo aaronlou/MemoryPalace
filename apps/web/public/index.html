@@ -58,6 +58,7 @@
       </button>
       <button type="button" class="tab" data-view="timeline">Timeline</button>
       <button type="button" class="tab" data-view="recall">Recall test</button>
+      <button type="button" class="tab" data-view="priorart">Prior art</button>
       <button type="button" class="tab" data-view="settings">Settings</button>
     </nav>
 
@@ -216,6 +217,84 @@
           <p class="lede">Permanently deletes every memory, observation and entity. This cannot be undone.</p>
           <button type="button" class="btn btn--danger" id="erase-btn">Erase all data</button>
         </div>
+      </section>
+
+      <!-- Prior art -->
+      <section class="view" id="view-priorart" hidden aria-labelledby="h-priorart">
+        <h2 id="h-priorart">Prior art</h2>
+        <p class="lede">
+          The projects we read, and what we took from them — including what we deliberately did
+          not. An entry marked <em>adopted</em> or <em>partial</em> has to point at something in
+          this repository. Every reference is checked against the checkout when it is saved and
+          again when this page loads, so a claim whose file, case or commit has since moved is
+          shown as broken rather than left looking authoritative.
+        </p>
+
+        <div class="card">
+          <h3>Add a project</h3>
+          <form id="priorart-form">
+            <div class="toolbar">
+              <div class="field field--grow">
+                <label for="pa-repo">GitHub repo</label>
+                <input id="pa-repo" name="repo" placeholder="owner/name" required />
+              </div>
+              <div class="field">
+                <label for="pa-status">Status</label>
+                <select id="pa-status" name="status">
+                  <option value="watched">watched</option>
+                  <option value="partial">partial</option>
+                  <option value="adopted">adopted</option>
+                  <option value="rejected">rejected</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="pa-title">Title</label>
+              <input id="pa-title" name="title" placeholder="Trigger-augmented graph memory" required />
+            </div>
+
+            <div class="field">
+              <label for="pa-claim">What it claims</label>
+              <textarea id="pa-claim" name="claim" rows="2" required
+                placeholder="Recall is reachability-bounded by query/memory similarity, so systems miss associative recall."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="pa-rationale">Assessment</label>
+              <textarea id="pa-rationale" name="rationale" rows="2" required
+                placeholder="Why it is or is not combinable with this product."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="pa-nottaken">What we did not take <span class="hint">(optional, and the most useful field)</span></label>
+              <textarea id="pa-nottaken" name="notTaken" rows="2"></textarea>
+            </div>
+
+            <div class="field">
+              <label for="pa-kill">Kill criterion <span class="hint">(required for watched)</span></label>
+              <textarea id="pa-kill" name="killCriterion" rows="2"
+                placeholder="What result would make us build it."></textarea>
+            </div>
+
+            <div class="field">
+              <label for="pa-evidence">Evidence <span class="hint">(one reference per line)</span></label>
+              <textarea id="pa-evidence" name="evidence" rows="3"
+                placeholder="docs/adr/0006-confirmed-rescue-below-the-semantic-floor.md&#10;packages/core/src/recall/pipeline.ts:317&#10;case:rec-017"></textarea>
+              <p class="hint">
+                A path, optionally with a line anchor (<code>file.ts:317</code> or
+                <code>file.ts#L317</code>); <code>case:rec-017</code> for a golden-dataset case;
+                <code>commit:abc1234</code> for the commit that adopted the idea.
+              </p>
+            </div>
+
+            <div class="button-row">
+              <button class="btn btn--primary" type="submit">Add project</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="priorart-list"></div>
       </section>
     </main>
 
