@@ -215,7 +215,7 @@ related".
 | `pnpm backup [file]` | write a full JSON backup (default `backups/<date>.json`) |
 | `pnpm restore <file>` | replace all data from a backup |
 | `pnpm backup check <file>` | verify a backup **without touching the database** |
-| `pnpm test` | full test suite (needs the database running) |
+| `pnpm test` | full test suite — **also wipes the configured database**, see Evaluation |
 | `pnpm eval` | run the evaluation suite — **wipes the configured database**, see below |
 | `pnpm eval --repeat N` | run it N times and report mean/min/max |
 | `pnpm eval --recall-mode fast\|smart\|auto` | measure the path an agent actually uses |
@@ -229,14 +229,22 @@ related".
 
 ## Evaluation
 
-> **`pnpm eval` is destructive.** It truncates every memory table in whatever
-> database `DATABASE_URL` points at, before each case, so that one case cannot
-> leak into the next. That is the right behaviour for a benchmark and the wrong
-> behaviour for your data: running it against your development database deletes
-> everything in it. It is not a hypothetical — this README's own reference table
-> was misread because of it. Point `DATABASE_URL` at a scratch database, or take
-> a backup first (`pnpm backup`), and do not run it against anything you care
-> about.
+> **`pnpm eval` and `pnpm test` are both destructive.** Each truncates every memory
+> table in whatever database `DATABASE_URL` points at — `eval` before each case so
+> one cannot leak into the next, the suite through its own fixtures. That is the
+> right behaviour for a benchmark and the wrong behaviour for your data: running
+> either against your development database deletes everything in it. This is not
+> hypothetical. It has cost this project its own reference table once (a run at the
+> wrong configuration was misread as a documentation error) and a real user's first
+> few memories once (while writing this very warning). Point `DATABASE_URL` at a
+> scratch database, or take a backup first (`pnpm backup`), and do not run them
+> against anything you care about:
+>
+> ```bash
+> createdb -h 127.0.0.1 -p 55432 -U mp mp_scratch
+> DATABASE_URL=postgresql://mp@127.0.0.1:55432/mp_scratch pnpm migrate
+> DATABASE_URL=postgresql://mp@127.0.0.1:55432/mp_scratch pnpm eval
+> ```
 
 Three suites over a 46-case golden dataset, calibrated so the numbers mean
 something.
@@ -245,9 +253,9 @@ something.
 
 | Provider / embedder | Extraction F1 | Adjudication | Recall P@5 / R@5 | Negative |
 |---|---|---|---|---|
-| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.604 / 0.667 | 100% |
+| `oracle` — calibrates the *harness* | **1.000** | **100%** | 0.646 / 0.708 | 100% |
 | `null` — extracts nothing | **0.000** | 10% | see note | see note |
-| `mock` — rule-based, no API key | 0.750 | 30% | 0.604 / 0.667 | 100% |
+| `mock` — rule-based, no API key | 0.750 | 30% | 0.646 / 0.708 | 100% |
 | DeepSeek + **bge-m3**, `smart` | 0.967 | 100% | 0.929 / 1.000 | 100% |
 | DeepSeek + **bge-m3**, `auto` | — | — | 0.893 / 1.000 | 100% |
 | DeepSeek + **embeddinggemma**, `smart` | **0.989** | 0.967 | **0.958 / 1.000** | 100% |
@@ -314,13 +322,20 @@ question that made them necessary. The set is a matched pair at an identical
 (a cat's name, must not). No threshold can satisfy both, so the pair only passes if
 the system is judging relevance rather than distance.
 
-*The offline rows fell from 0.750 / 0.857 to 0.604 / 0.667 when those ten cases
+*The offline rows fell from 0.750 / 0.857 to 0.646 / 0.708 when those ten cases
 arrived.* That is the dataset getting harder, not the system getting worse, and the
 distinction is why the dataset hash sits in the report fingerprint. Every one of
-the nine cases the offline stack now misses needs a term that appears only in the
+the seven cases the offline stack now misses needs a term that appears only in the
 memory and never in the query; a hashing bag-of-tokens has no notion of a
 paraphrase, so it structurally cannot reach them. `rec-014` is the matching guard —
 a negative the offline stack does pass.
+
+*Those two rows are also stated at the default vector width.* The stand-in embedder
+hashes each token into `hash % dim`, so its recall depends on the column width that
+`pnpm migrate` creates — `vector(1024)`, which is what CI and a fresh clone have.
+At 768 dimensions the same command reports 0.604 / 0.667. Neither is wrong; they
+are different configurations, and `embeddingDim` is in the fingerprint so
+`eval:compare` will refuse to read one as a change in the other.
 
 *The bge-m3 rows are from an earlier, 14-case suite and are not comparable to the
 rest.* They were measured while that model was installed. Comparing them to the
