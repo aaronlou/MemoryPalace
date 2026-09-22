@@ -5,6 +5,7 @@ import {
   detectScript,
   languageName,
   newId,
+  normaliseStatedDate,
   normalizeWhitespace,
 } from "@memory-palace/shared"
 import { entityIdsFor, resolveEntities } from "../entity/resolve.js"
@@ -274,7 +275,7 @@ export class FormationPipeline {
         entities: candidate.entities.map((e) => ({ name: e.name, kind: e.kind })),
         confidence: candidate.confidence,
         importance: candidate.importance,
-        validFrom: candidate.validFrom ?? undefined,
+        validFrom: normaliseStatedDate(candidate.validFrom),
         reasoning: candidate.reasoning,
       })
     }
@@ -514,7 +515,8 @@ export class FormationPipeline {
           .map((m) => m.validFrom)
           .filter((v): v is string => v !== undefined)
           .sort()[0]
-        let effectiveFrom = decision.effectiveFrom ?? candidate.validFrom ?? now
+        let effectiveFrom =
+          normaliseStatedDate(decision.effectiveFrom) ?? candidate.validFrom ?? now
         if (earliest && new Date(effectiveFrom) < new Date(earliest)) effectiveFrom = earliest
 
         return {

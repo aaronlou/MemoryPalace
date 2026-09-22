@@ -350,6 +350,47 @@ describe("timeline", () => {
   })
 })
 
+describe("dates supplied by a client", () => {
+  /**
+   * `2026-06` is valid ISO-8601 and invalid `timestamptz`. A model reading
+   * "2026年6月" writes exactly that, and the insert used to fail with
+   * "invalid input syntax for type timestamp with time zone", losing the whole
+   * sentence. Coercing to the start of the named period is the fix; rejecting it
+   * would throw away a date the user actually stated.
+   */
+  it("accepts a partial date and resolves it to the start of the period", async () => {
+    const { status, body } = await remember("我 2026 年 6 月换了 React。", {
+      occurredAt: "2026-06",
+    })
+    expect(status).toBe(200)
+    expect(body.memories.length).toBeGreaterThan(0)
+    expect(body.memories[0]!.validFrom).toBe("2026-06-01T00:00:00.000Z")
+  })
+
+  /**
+   * The other half of the policy, and the opposite of how model output is
+   * treated: a client can correct its input, and quietly reading a bad `asOf` as
+   * "now" would answer a question the caller did not ask. So this rejects.
+   */
+  it("rejects a date it cannot read, rather than silently meaning 'now'", async () => {
+    const remembered = await remember("我说过一句话。", { occurredAt: "上周三" })
+    expect(remembered.status).toBe(400)
+    expect(remembered.body).toMatchObject({ error: { code: "VALIDATION_ERROR" } })
+
+    const recalled = await post("/api/recall", { query: "我说过什么？", asOf: "上周三" })
+    expect(recalled.status).toBe(400)
+    expect(recalled.body).toMatchObject({ error: { code: "VALIDATION_ERROR" } })
+  })
+
+  it("still accepts a full instant unchanged", async () => {
+    const { status, body } = await remember("我一直在用 Vue。", {
+      occurredAt: "2025-01-01T00:00:00.000Z",
+    })
+    expect(status).toBe(200)
+    expect(body.memories[0]!.validFrom).toBe("2025-01-01T00:00:00.000Z")
+  })
+})
+
 describe("agent policies", () => {
   it("defaults, then persists an override", async () => {
     const initial = await json<{ policies: unknown[] }>("/api/policies")

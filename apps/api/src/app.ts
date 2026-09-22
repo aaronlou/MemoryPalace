@@ -5,7 +5,12 @@ import { fileURLToPath } from "node:url"
 import type { MemoryFilter, MemoryStatus, MemoryType } from "@memory-palace/core"
 import type { Runtime } from "@memory-palace/runtime"
 import { registerTools, renderMarkdown, SERVER_INSTRUCTIONS } from "@memory-palace/runtime"
-import { isAppError, toErrorPayload } from "@memory-palace/shared"
+import {
+  isAppError,
+  normaliseStatedDate,
+  toErrorPayload,
+  ValidationError,
+} from "@memory-palace/shared"
 import type { TransferBundle } from "@memory-palace/storage-pg"
 import { exportAll, importAll, wipeUser } from "@memory-palace/storage-pg"
 import { McpServer, WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/server"
@@ -35,6 +40,28 @@ function statusFor(error: unknown): 400 | 404 | 409 | 500 {
     default:
       return 500
   }
+}
+
+/**
+ * Coerce a date supplied by a client, or reject it.
+ *
+ * This is deliberately stricter than the treatment of dates the *model* states.
+ * Model output is coerced and dropped when unrecognised, because one unparsable
+ * field must not lose the user's sentence — the memory is still worth keeping.
+ * A client is different: it can fix its input, and substituting "now" would
+ * answer a question nobody asked. `asOf: "last tuesday"` quietly becoming
+ * "as of now" is a confidently wrong answer, not a graceful degradation.
+ */
+function requireDate(value: string | undefined, field: string): string | undefined {
+  if (value === undefined) return undefined
+  const iso = normaliseStatedDate(value)
+  if (iso === undefined) {
+    throw new ValidationError(`${field} must be an ISO-8601 date, got ${JSON.stringify(value)}`, {
+      field,
+      value,
+    })
+  }
+  return iso
 }
 
 export function createApp(runtime: Runtime): Hono {
@@ -83,7 +110,7 @@ export function createApp(runtime: Runtime): Hono {
         content: body.content,
         sourceKind: (body.sourceKind as never) ?? "user",
         agentId: body.agentId,
-        occurredAt: body.occurredAt,
+        occurredAt: requireDate(body.occurredAt, "occurredAt"),
       }),
     )
   })
@@ -111,8 +138,8 @@ export function createApp(runtime: Runtime): Hono {
       mode: (body.mode as never) ?? "auto",
       taskType: body.taskType,
       entities: body.entities,
-      asOf: body.asOf,
-      believedAt: body.believedAt,
+      asOf: requireDate(body.asOf, "asOf"),
+      believedAt: requireDate(body.believedAt, "believedAt"),
       includeHistory: body.includeHistory ?? false,
       format: (body.format as never) ?? "json",
       limit: body.limit,
