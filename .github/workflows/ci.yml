@@ -4,10 +4,14 @@ on:
   push:
     branches: [main]
   pull_request:
-  # Manual re-run. Also the answer to a GitHub subtlety worth writing down: a push
-  # that MODIFIES this file does not appear to create a run for that push, so a
-  # change to CI cannot be validated by the push that introduces it. Without a
-  # manual trigger there would be no way to check it at all.
+  # Manual re-run.
+  #
+  # One push to this repository produced no run at all: not the pushes before it,
+  # not the ones after it, and no cause was established — the workflow was active,
+  # Actions was operational, and the commit was on `main`. A missed run is silent,
+  # because the absence of a check looks exactly like nothing having changed. This
+  # trigger is the remedy: it validates the current tree on demand instead of
+  # waiting for the next push to do it as a side effect.
   workflow_dispatch:
 
 jobs:
