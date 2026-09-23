@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual re-run. Also the answer to a GitHub subtlety worth writing down: a push
+  # that MODIFIES this file does not appear to create a run for that push, so a
+  # change to CI cannot be validated by the push that introduces it. Without a
+  # manual trigger there would be no way to check it at all.
+  workflow_dispatch:
 
 jobs:
   test:
