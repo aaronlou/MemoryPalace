@@ -78,13 +78,39 @@ flowchart LR
 ## Quick start
 
 ```bash
-pnpm install                 # dependencies
-pnpm db:start                # self-contained PostgreSQL 18 + pgvector cluster
-pnpm migrate                 # create the schema
-pnpm demo --reset            # end-to-end walkthrough, no credentials needed
+pnpm install                 # dependencies, once
+pnpm start                   # database, migrations, the web app — then open the URL
 ```
 
-Then the two surfaces:
+`pnpm start` brings up the database, applies migrations, checks that the embedding
+model is reachable, starts the server in the background, and waits until it actually
+answers. When it prints the URL, the app is ready:
+
+```
+Memory Palace is running
+  web ui   http://127.0.0.1:8787/
+  mcp      http://127.0.0.1:8787/mcp   (Streamable HTTP)
+  logs     data/api.log
+  stop     pnpm stop
+```
+
+Open **http://127.0.0.1:8787/** and use it. To stop it again:
+
+```bash
+pnpm stop                    # stops the server, including one started another way
+pnpm status                  # is it running, and is the database up?
+pnpm restart                 # stop, then start
+```
+
+`pnpm stop` finds the server by its recorded pid **and** by whatever is listening on
+the port, so it also stops one you started by hand — and it only ever signals a
+process whose working directory is this checkout.
+
+It ships with mock providers, so nothing above needs an API key or a network. To
+point it at a real model, copy `.env.example` to `.env` and fill it in.
+
+**For developing on it**, run the server in the foreground instead, so its log is
+your terminal:
 
 ```bash
 pnpm dev:api                 # HTTP API + web UI + MCP over HTTP  → http://127.0.0.1:8787
@@ -95,8 +121,8 @@ Nothing needs a build step to run: the CLIs and both servers execute the TypeScr
 sources through `tsx`, and `tsconfig.tools.json` maps the workspace packages to
 `src/` so they resolve without `dist/` existing. Run `pnpm build` when you want the
 compiled artifacts, which the stdio config below points at. The web UI ships in
-**English and Chinese**, switchable in the top bar and remembered per browser. Or
-do all of it at once with `pnpm setup`.
+**English and Chinese**, switchable in the top bar and remembered per browser. To
+see the whole system exercise itself first, run `pnpm demo --reset`.
 
 ### What you should see
 
@@ -387,6 +413,8 @@ startup with the exact commands to fix it.
 
 | Command | What it does |
 |---|---|
+| `pnpm start` | **database, migrations and the web app in one command** |
+| `pnpm stop` / `status` / `restart` | stop the server (even one started by hand), report, or cycle it |
 | `pnpm setup` | install + start database + migrate + build |
 | `pnpm db:start` / `db:stop` / `db:status` | manage the repo-local Postgres cluster |
 | `pnpm db:psql` | open a psql shell |

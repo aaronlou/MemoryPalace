@@ -67,20 +67,43 @@ flowchart LR
 ## 快速开始
 
 ```bash
-pnpm install                 # dependencies
-pnpm db:start                # self-contained PostgreSQL 18 + pgvector cluster
-pnpm migrate                 # create the schema
-pnpm demo --reset            # end-to-end walkthrough, no credentials needed
+pnpm install                 # dependencies, once
+pnpm start                   # database, migrations, the web app — then open the URL
 ```
 
-然后启动两个入口：
+`pnpm start` 会拉起数据库、应用迁移、检查 embedding 模型是否可达、把服务放到后台启动，
+并一直等到它真的能回答请求为止。它打印出地址时，应用就已经可用了：
+
+```
+Memory Palace is running
+  web ui   http://127.0.0.1:8787/
+  mcp      http://127.0.0.1:8787/mcp   (Streamable HTTP)
+  logs     data/api.log
+  stop     pnpm stop
+```
+
+打开 **http://127.0.0.1:8787/** 就能用。要关掉：
+
+```bash
+pnpm stop                    # stops the server, including one started another way
+pnpm status                  # is it running, and is the database up?
+pnpm restart                 # stop, then start
+```
+
+`pnpm stop` 既按记录的 pid 找服务，也按**端口上正在监听的那个进程**找，所以连你手工
+启动的服务也能停掉；而且它只会向工作目录是本仓库的进程发信号。
+
+默认使用 mock provider，上面这些都不需要 API key、也不需要联网。要用真实模型，把
+`.env.example` 复制成 `.env` 填好即可。
+
+**要在它上面做开发**，就改成前台运行，这样日志直接打在你的终端里：
 
 ```bash
 pnpm dev:api                 # HTTP API + web UI + MCP over HTTP  → http://127.0.0.1:8787
 pnpm dev:mcp                 # MCP server over stdio (what agents spawn)
 ```
 
-以上都不需要先构建：CLI 和两个服务都通过 `tsx` 直接运行 TypeScript 源码，`tsconfig.tools.json` 把 workspace 各包映射到 `src/`，因此 `dist/` 不存在也能解析。需要编译产物时再跑 `pnpm build`，下面 stdio 配置指向的就是它。Web UI 提供**中英文两个版本**，顶栏切换并按浏览器记忆。想一步到位就用 `pnpm setup`。
+以上都不需要先构建：CLI 和两个服务都通过 `tsx` 直接运行 TypeScript 源码，`tsconfig.tools.json` 把 workspace 各包映射到 `src/`，因此 `dist/` 不存在也能解析。需要编译产物时再跑 `pnpm build`，下面 stdio 配置指向的就是它。Web UI 提供**中英文两个版本**，顶栏切换并按浏览器记忆。想先看整个系统自己跑一遍，用 `pnpm demo --reset`。
 
 ### 你会看到什么
 
@@ -314,6 +337,8 @@ pnpm embedding:reembed      # recompute
 
 | 命令 | 作用 |
 |---|---|
+| `pnpm start` | **一条命令拉起数据库、迁移与 Web 应用** |
+| `pnpm stop` / `status` / `restart` | 停掉服务（手工启动的也能停）、查看状态、重启 |
 | `pnpm setup` | 安装 + 起库 + 迁移 + 构建 |
 | `pnpm db:start` / `db:stop` / `db:status` | 管理仓库自带的 Postgres 集群 |
 | `pnpm db:psql` | 打开 psql |
