@@ -501,3 +501,69 @@ describe("the hidden attribute actually hides", () => {
     expect(js).toContain('$("#drawer-title").textContent =')
   })
 })
+
+/**
+ * The interface's own wiring, which no API test can see.
+ *
+ * Two bugs of the same family lived in here for the project's whole life, and both
+ * were silent:
+ *
+ *  - `memoryCard(memory, { actions = "" } = {})` was called as
+ *    `memoryCard(m, `<button …>`)`. Destructuring a string yields `undefined`, so
+ *    the default applied and every row rendered with an empty action bar. No
+ *    `Details` button, so the drawer could not be opened at all.
+ *  - the drawer's own buttons had no listener: `#drawer-body` was written but never
+ *    added to the delegated click handler, so `Save correction`, `Archive` and
+ *    `Delete permanently` did nothing when clicked.
+ *
+ * Together they made it impossible to edit or delete a memory from the web UI,
+ * while the API, the endpoint tests and the static checks all passed.
+ */
+describe("the interface's own wiring", () => {
+  it("passes an object where a signature destructures one", () => {
+    const offenders: string[] = []
+    for (const sig of js.matchAll(/function\s+(\w+)\s*\(([^)]*)\)\s*\{/g)) {
+      const [whole, name, params] = sig
+      const paramList = params!.split(",").map((p) => p.trim())
+      const index = paramList.findIndex((p) => p.startsWith("{"))
+      if (index === -1) continue
+      for (const call of js.matchAll(new RegExp(`\\b${name!}\\(([^)]*)`, "g"))) {
+        if (call[0] === whole) continue // the declaration itself
+        const arg = (call[1]!.split(",")[index] ?? "").trim()
+        // A string or template literal where an object is destructured silently
+        // takes the default value instead.
+        if (["`", '"', "'"].some((q) => arg.startsWith(q))) {
+          offenders.push(`${name}() argument ${index + 1}`)
+        }
+      }
+    }
+    expect(offenders, `destructured parameter given a string: ${offenders.join(", ")}`).toEqual([])
+  })
+
+  it("wires a click handler for every container it renders actions into", () => {
+    // Read the delegation list itself. Matching the id anywhere in the file is
+    // useless: `#drawer-body` also appears on the line that assigns its innerHTML,
+    // so an `includes` check passes with the listener missing — which is precisely
+    // the bug this test exists for.
+    const list = /for \(const listId of \[([^\]]+)\]/.exec(js)?.[1]
+    expect(list, "the delegated-listener loop was not found").toBeTruthy()
+    const delegated = new Set([...list!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!))
+
+    const containers = ["#memories-list", "#pending-list", "#timeline-list", "#drawer-body"]
+    for (const id of containers) {
+      expect(delegated.has(id), `${id} is missing from the delegation list`).toBe(true)
+      // …and it is a real container the script queries, not a name nobody uses.
+      expect(js, `${id} is delegated but never queried`).toContain(`$("${id}")`)
+    }
+    // Adding a container is a decision; it should not be possible to forget one.
+    expect([...delegated].sort()).toEqual([...containers].sort())
+  })
+
+  it("has a handler for every data-action it renders", () => {
+    const actions = new Set([...js.matchAll(/data-action="([a-z]+)"/g)].map((m) => m[1]!))
+    expect(actions.size).toBeGreaterThan(3)
+    const handlers = new Set([...js.matchAll(/^\s{2}async (\w+)\(/gm)].map((m) => m[1]!))
+    const missing = [...actions].filter((a) => !handlers.has(a))
+    expect(missing, `no ACTIONS handler for: ${missing.join(", ")}`).toEqual([])
+  })
+})

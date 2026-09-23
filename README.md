@@ -331,6 +331,20 @@ curl -s localhost:8787/api/recall -H 'content-type: application/json' \
   -d '{"query":"用户用什么前端框架？","asOf":"2026-03-01","includeHistory":true}' | jq '.memories[].memory.content'
 ```
 
+### Correcting and deleting a memory by hand
+
+Everything an agent can do, you can do yourself in the **Memories** tab. Each row
+has a **Details** button, which opens the memory and three ways to change it:
+
+| Action | What happens |
+|---|---|
+| **Save correction** | Writes the corrected wording as a **new version** and keeps the old one in the history, visible under *How this changed*. A correction never overwrites what was there — that is the point of the model, not a limitation of the button |
+| **Archive** | Retires it: gone from recall, still in the history and still exportable |
+| **Delete permanently** | Actually deletes the row, after asking. This is not a flag — there is no undo, so archive is the reversible choice |
+
+The **Needs review** tab works the same way, with **Confirm** and **Reject** for
+anything that was held back rather than stored automatically.
+
 ### What it will not do
 
 - **Lose input to a model failure.** The observation is written first; a failed

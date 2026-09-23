@@ -116,7 +116,21 @@ function emptyState(title, body, action = "") {
 
 // ------------------------------------------------------------------ render --
 
-function memoryCard(memory, { actions = "" } = {}) {
+/**
+ * One row. `actions` is the HTML for its buttons, as a string.
+ *
+ * It used to be declared as `{ actions = "" } = {}`, destructuring an object,
+ * while all three call sites passed a template literal. Destructuring a string
+ * yields `undefined`, so the default applied and **every row rendered with no
+ * buttons at all** — no `Details`, so the drawer that edits and deletes a memory
+ * was unreachable, and no `Confirm`/`Reject`, so the confirmation queue could not
+ * be worked. Nothing failed loudly: an empty `<div class="item__actions">` is
+ * valid HTML, and every API test passes because the endpoints were fine.
+ *
+ * The signature matches its call sites now, and `no-destructured-argument` in
+ * `web-ui.test.ts` keeps the two from drifting apart again.
+ */
+function memoryCard(memory, actions = "") {
   const historical = isHistorical(memory)
   return `
     <article class="item ${historical ? "item--historical" : ""}" data-id="${esc(memory.id)}" data-status="${esc(memory.status)}">
@@ -851,7 +865,12 @@ function init() {
   })
 
   // List interactions (event delegation; lists are re-rendered often)
-  for (const listId of ["#memories-list", "#pending-list", "#timeline-list"]) {
+  //
+  // `#drawer-body` belongs in this list: the drawer is regenerated per memory and
+  // carries `Save correction` / `Archive` / `Delete permanently`, which are the
+  // only way to edit or delete anything. It was missing, so those three buttons
+  // did nothing when clicked — no error, no request, just silence.
+  for (const listId of ["#memories-list", "#pending-list", "#timeline-list", "#drawer-body"]) {
     $(listId).addEventListener("click", (event) => {
       const button = event.target.closest("[data-action]")
       if (!button) return
