@@ -201,6 +201,50 @@ describe("behaviour is identical after a backup and restore", () => {
 
     expect(await rt.storage.store.countMemories(USER, {})).toBe(before)
   })
+
+  /**
+   * Prior art travels with the backup.
+   *
+   * It has no foreign key to memories, so it needs its own delete and its own
+   * insert, and neither was covered — which matters because `wipeUser` is what
+   * "erase all data" calls: an erase that left the reference list behind would be
+   * a lie, and a backup that dropped it would silently lose the one artifact here
+   * that a model cannot regenerate.
+   */
+  it("carries prior art through export, wipe and import", async () => {
+    const repo = "owner/assessment-subject"
+    await rt.storage.priorArt.upsert(USER, {
+      repo,
+      title: "A project worth recording",
+      claim: "Recall is reachability-bounded.",
+      status: "partial",
+      rationale: "The probe band answers the same premise.",
+      notTaken: "Its graph projection.",
+      evidence: [{ kind: "path", ref: "packages/core/src/recall/pipeline.ts" }],
+      evaluation: { state: "accepted", revision: "abc1234" },
+    })
+
+    const bundle = await exportAll(rt.storage.db, USER, {})
+    expect(bundle.priorArt).toHaveLength(1)
+
+    await wipeUser(rt.storage.db, USER)
+    expect(await rt.storage.priorArt.list(USER)).toEqual([])
+
+    await importAll(rt.storage.db, bundle)
+    const restored = await rt.storage.priorArt.list(USER)
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({
+      repo,
+      status: "partial",
+      notTaken: "Its graph projection.",
+      // The evaluation state is part of the entry, not a transient flag, so it has
+      // to survive too — otherwise a restored entry looks unassessed.
+      evaluation: { state: "accepted", revision: "abc1234" },
+    })
+    expect(restored[0]!.evidence).toEqual([
+      { kind: "path", ref: "packages/core/src/recall/pipeline.ts" },
+    ])
+  })
 })
 
 describe("bundle validation", () => {

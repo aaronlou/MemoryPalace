@@ -252,7 +252,8 @@ async function insertRows(
     const columns = Object.keys(row).filter((c) => !skipColumns.includes(c))
     if (columns.length === 0) continue
     const placeholders = columns.map((_, i) => `$${i + 1}`).join(",")
-    const values = columns.map((c) => normaliseValue(row[c]))
+    const jsonColumns = await jsonColumnsOf(client, table)
+    const values = columns.map((c) => normaliseValue(row[c], jsonColumns.has(c)))
     const conflict =
       conflictColumns.length > 0
         ? ` ON CONFLICT (${conflictColumns.join(",")}) DO NOTHING`
@@ -276,12 +277,38 @@ function quoteIdent(name: string): string {
   return `"${name}"`
 }
 
-function normaliseValue(value: unknown): unknown {
+/**
+ * The jsonb columns of a table, asked of the database rather than listed here.
+ *
+ * This has to be type-aware, not shape-aware. `node-postgres` serialises a JS
+ * array as a Postgres array literal, which is right for `entities.aliases` and the
+ * two policy columns, and wrong for a jsonb array — it fails with "invalid input
+ * syntax for type json". An earlier version stringified objects but deliberately
+ * left arrays alone, so `prior_art.evidence` broke the whole restore: the insert
+ * threw, the transaction rolled back, and a backup containing a prior-art entry
+ * could not be imported at all.
+ *
+ * Asking the catalogue means a future jsonb column is handled the day it is added,
+ * which is exactly the mistake this replaces.
+ */
+async function jsonColumnsOf(client: import("pg").PoolClient, table: string): Promise<Set<string>> {
+  const { rows } = await client.query<{ column_name: string }>(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = $1
+        AND data_type IN ('json', 'jsonb')`,
+    [table],
+  )
+  return new Set(rows.map((row) => row.column_name))
+}
+
+function normaliseValue(value: unknown, isJson: boolean): unknown {
   if (value === null || value === undefined) return null
   // Timestamps come back from node-postgres as Date objects. They must become
   // ISO strings here, at import time, so the two representations of a bundle
   // are identical.
   if (value instanceof Date) return value.toISOString()
+  // jsonb takes JSON text; a JS array would otherwise be read as a Postgres array.
+  if (isJson) return JSON.stringify(value)
   if (typeof value === "object" && !Array.isArray(value)) return JSON.stringify(value)
   return value
 }

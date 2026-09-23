@@ -6,15 +6,27 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { databaseNameOf, SCRATCH_DATABASE_URL } from "@memory-palace/shared"
 import type { EvalReport, ProviderKind } from "./harness.js"
 import { runEval } from "./harness.js"
 import { formatPercent, formatRatio } from "./metrics.js"
+
+/**
+ * Evaluation truncates every table before each case, so it defaults to the
+ * scratch database rather than to the development one. Pointing it at real data is
+ * still possible and occasionally right, but it is no longer what happens when
+ * nobody thought about it — which is how an `eval-user` memory ended up in a
+ * development database.
+ */
+process.env.DATABASE_URL ??= SCRATCH_DATABASE_URL
 
 function arg(name: string, fallback?: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`)
   if (i === -1) return fallback
   return process.argv[i + 1] ?? fallback
 }
+
+process.stderr.write(`eval: database ${databaseNameOf(process.env.DATABASE_URL) ?? "<unknown>"}\n`)
 
 const provider = (arg("provider", "mock") ?? "mock") as ProviderKind
 const filter = arg("filter")

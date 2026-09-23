@@ -1,3 +1,4 @@
+import { databaseNameOf } from "@memory-palace/shared"
 import pg from "pg"
 
 const { Pool } = pg
@@ -11,8 +12,17 @@ const { Pool } = pg
  */
 export class PgDatabase {
   private readonly pool: pg.Pool
+  /**
+   * The database this connection points at.
+   *
+   * Exposed by name rather than as the connection string: it is what the
+   * destructive-command guard needs, and it is safe to print in an error message,
+   * whereas a connection string carries credentials.
+   */
+  readonly databaseName: string | undefined
 
   constructor(connectionString: string, maxConnections = 10) {
+    this.databaseName = databaseNameOf(connectionString)
     this.pool = new Pool({
       connectionString,
       max: maxConnections,

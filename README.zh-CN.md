@@ -279,7 +279,7 @@ curl -s localhost:8787/api/recall -H 'content-type: application/json' \
 
 请读**每一行**，而不是最好那一行：embedder 本身就是结果的一部分，`fast` 根本用不上它（P@5 0.583 对 `smart` 的 0.958），而让这些数字保持诚实的每一条注意事项 —— 离线行为什么够不到改写、数据集变难在哪里、哪里仍然薄弱 —— 都在同一页：[**评估页**](./docs/EVALUATION.md)。召回阈值及其各自的证据在[召回如何决策](./docs/RECALL.md)。
 
-> **`pnpm eval` 与 `pnpm test` 都会删数据**：它们会清空 `DATABASE_URL` 所指向库里所有记忆表。`pnpm test` 默认走独立数据库（`pnpm db:test`）；`pnpm eval` 不会，所以请把 `DATABASE_URL` 指向一个临时库，或先做一次[备份](./docs/EVALUATION.md)。
+> **测试套件与评估工具链都是破坏性的**：它们会清空 `DATABASE_URL` 所指向库里所有记忆表。两者都默认走一个独立的临时库（由 `pnpm db:test` 创建），并且**在指向别处时直接拒绝运行** —— 指错库现在会带着修复办法报错，而不是悄悄删掉它。确实要故意清掉一份副本时，用 `MP_ALLOW_DESTRUCTIVE=1` 覆盖。在需要之前先做一次[备份](./docs/EVALUATION.md)。
 
 ---
 

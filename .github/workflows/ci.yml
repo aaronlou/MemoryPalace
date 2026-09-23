@@ -18,17 +18,18 @@ jobs:
         env:
           POSTGRES_USER: mp
           POSTGRES_PASSWORD: mp
-          POSTGRES_DB: memory_palace
+          POSTGRES_DB: memory_palace_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U mp -d memory_palace"
+          --health-cmd "pg_isready -U mp -d memory_palace_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
 
     env:
-      DATABASE_URL: postgresql://mp:mp@127.0.0.1:5432/memory_palace
+      # A disposable name: the test suite refuses to truncate anything else.
+      DATABASE_URL: postgresql://mp:mp@127.0.0.1:5432/memory_palace_test
       # Mock providers: no API key, no network, no cost. The oracle/null
       # calibration assertions in evals/harness.test.ts run here.
       MP_LLM_PROVIDER: mock

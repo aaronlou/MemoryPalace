@@ -342,10 +342,13 @@ dataset got harder about, what is still weak — is on one page:
 [**the evaluation page**](./docs/EVALUATION.md). The retrieval thresholds and the
 evidence behind each are in [how recall decides](./docs/RECALL.md).
 
-> **`pnpm eval` and `pnpm test` are destructive**: each truncates the memory tables
-> in whatever database `DATABASE_URL` points at. `pnpm test` defaults to a separate
-> database (`pnpm db:test`); `pnpm eval` does not, so point `DATABASE_URL` at a
-> scratch database or take a [backup](./docs/EVALUATION.md) first.
+> **The test suite and the evaluation harness are destructive**: each truncates the
+> memory tables in whatever database `DATABASE_URL` points at. Both default to a
+> separate scratch database (`pnpm db:test` creates it), and both **refuse to run
+> at all** against anything else — a run aimed at the wrong database now fails with
+> the fix in the message rather than silently deleting it. `MP_ALLOW_DESTRUCTIVE=1`
+> overrides that, for the legitimate case of erasing a copy on purpose. Take a
+> [backup](./docs/EVALUATION.md) before you need one.
 
 ---
 

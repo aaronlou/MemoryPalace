@@ -2,7 +2,7 @@ import type { EmbeddingPort, LlmPort } from "@memory-palace/core"
 import type { RepoFetcher, Runtime } from "@memory-palace/runtime"
 import { createRuntime } from "@memory-palace/runtime"
 import type { ConfigOverrides } from "@memory-palace/shared"
-import { FixedClock } from "@memory-palace/shared"
+import { assertScratchDatabase, FixedClock } from "@memory-palace/shared"
 import { PgDatabase, readEmbeddingDim, VECTOR_DIM } from "@memory-palace/storage-pg"
 
 /**
@@ -126,8 +126,16 @@ export async function schemaEmbeddingDim(
   }
 }
 
-/** Delete every row. Uses TRUNCATE so tests cannot leak state between files. */
+/**
+ * Delete every row. Uses TRUNCATE so tests cannot leak state between files.
+ *
+ * Refuses to run against anything but a scratch database. This is the single
+ * choke point for the test suite and the evaluation harness, so the guard here
+ * covers both: neither has any business truncating a database someone keeps
+ * memories in, and running either against the wrong URL is how that has happened.
+ */
 export async function truncateAll(db: PgDatabase): Promise<void> {
+  assertScratchDatabase(db.databaseName, "truncateAll")
   await db.query(
     // `prior_art` has no cascade path to `memories`, so it has to be named here
     // explicitly — otherwise entries leak between test files.
