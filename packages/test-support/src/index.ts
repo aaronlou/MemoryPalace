@@ -150,10 +150,12 @@ export async function schemaEmbeddingDim(databaseUrl: string = TEST_DB_URL): Pro
 export async function truncateAll(db: PgDatabase): Promise<void> {
   assertScratchDatabase(db.databaseName, "truncateAll")
   await db.query(
-    // `prior_art` has no cascade path to `memories`, so it has to be named here
-    // explicitly — otherwise entries leak between test files.
+    // `prior_art` and `recall_feedback` have no cascade path to `memories`, so
+    // they have to be named here explicitly — otherwise entries leak between test
+    // files. Every table added to the schema belongs in this list.
     `TRUNCATE observations, memories, memory_relations, entities, memory_entities,
-              memory_sources, agent_policies, extraction_runs, memory_embeddings, prior_art
+              memory_sources, agent_policies, extraction_runs, memory_embeddings,
+              prior_art, recall_feedback
      RESTART IDENTITY CASCADE`,
   )
 }

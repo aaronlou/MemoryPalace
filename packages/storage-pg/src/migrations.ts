@@ -298,12 +298,67 @@ CREATE INDEX IF NOT EXISTS prior_art_evaluation_idx
   ON prior_art (user_id, (evaluation->>'state'));
 `
 
+/**
+ * Judgements about recall quality, recorded where the failure was observed.
+ *
+ * The point of the table is the `missed` verdict. Precision failures are already
+ * visible — something was returned that should not have been — but a recall that
+ * returned nothing, or returned the wrong few, leaves no trace anywhere: the
+ * store cannot know it failed, because from its side a query simply happened.
+ * Without this row the only way to learn about one is for somebody to notice,
+ * remember it later, and retype the query into a dataset.
+ *
+ * `returned_ids` stores what recall gave back — not just what was judged — so a
+ * verdict can be re-read months later and still say what it was about. The
+ * alternative, "the user disliked memory X", is useless once that version is
+ * superseded, and useless for building a test case, which needs the whole
+ * candidate set and not just the one that offended.
+ *
+ * `expected_*` may name a stored memory OR describe one that does not exist yet.
+ * Both are real outcomes: sometimes recall missed a memory it holds, sometimes
+ * the memory was never formed at all. Only the first can become a recall test
+ * case; the second is a formation failure, and conflating them would hide it.
+ *
+ * `promoted_to` is set once this row has been turned into a golden-set case. It
+ * is recorded here rather than inferred, because re-deriving "is this already
+ * covered?" requires reading the dataset, and the answer has to survive edits.
+ */
+const RECALL_FEEDBACK = `
+CREATE TABLE IF NOT EXISTS recall_feedback (
+  id                  text PRIMARY KEY,
+  user_id             text NOT NULL,
+  query               text NOT NULL,
+  recall_mode         text NOT NULL
+                        CHECK (recall_mode IN ('fast','smart')),
+  returned_ids        jsonb NOT NULL DEFAULT '[]'::jsonb,
+  verdict             text NOT NULL
+                        CHECK (verdict IN ('helpful','not_relevant','missed')),
+  expected_memory_id  text,
+  expected_text       text,
+  note                text,
+  source              text NOT NULL DEFAULT 'unknown',
+  promoted_to         text,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  -- A "missed" verdict that does not say WHAT was missed cannot be turned into
+  -- a test case, which is the only reason to collect one. Refuse it at the row
+  -- level so no caller can quietly file a useless label.
+  CONSTRAINT recall_feedback_missed_names_expectation
+    CHECK (verdict <> 'missed' OR expected_memory_id IS NOT NULL OR expected_text IS NOT NULL)
+);
+
+-- The review flow reads the newest unresolved rows; promotion count is rare.
+CREATE INDEX IF NOT EXISTS recall_feedback_unresolved_idx
+  ON recall_feedback (user_id, created_at DESC)
+  WHERE promoted_to IS NULL;
+`
+
 /** Append-only: never edit an applied migration, always add a new one. */
 export const MIGRATIONS: Migration[] = [
   { id: "0001_initial_schema", sql: INITIAL_SCHEMA },
   { id: "0002_extraction_run_language_retries", sql: LANGUAGE_RETRIES },
   { id: "0003_prior_art", sql: PRIOR_ART },
   { id: "0004_prior_art_evaluation", sql: PRIOR_ART_EVALUATION },
+  { id: "0005_recall_feedback", sql: RECALL_FEEDBACK },
 ]
 
 /** SQL applied before any migration runs. */

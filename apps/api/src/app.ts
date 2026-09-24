@@ -8,6 +8,7 @@ import type {
   MemoryType,
   PriorArtInput,
   PriorArtStatus,
+  RecallVerdict,
 } from "@memory-palace/core"
 import type { Runtime } from "@memory-palace/runtime"
 import { registerTools, renderMarkdown, SERVER_INSTRUCTIONS } from "@memory-palace/runtime"
@@ -304,6 +305,50 @@ export function createApp(runtime: Runtime): Hono {
   app.post("/api/pending/:id/reject", async (c) => {
     const body = await c.req.json<{ reason?: string }>().catch(() => ({ reason: undefined }))
     return c.json(await palace.rejectMemory(config.userId, c.req.param("id"), body.reason))
+  })
+
+  // --- recall feedback -----------------------------------------------------
+  //
+  // Both directions matter. Recording is cheap enough to do in the moment,
+  // otherwise it never happens; reading back is what turns those labels into
+  // golden-set cases, which is the only reason to have collected them.
+  app.post("/api/feedback", async (c) => {
+    const body = await c.req.json<{
+      query?: string
+      recallMode?: "fast" | "smart"
+      returnedIds?: string[]
+      verdict?: RecallVerdict
+      expectedMemoryId?: string
+      expectedText?: string
+      note?: string
+    }>()
+    return c.json(
+      await palace.recordRecallFeedback({
+        userId: config.userId,
+        query: body.query ?? "",
+        recallMode: body.recallMode === "smart" ? "smart" : "fast",
+        returnedIds: body.returnedIds ?? [],
+        verdict: body.verdict as RecallVerdict,
+        expectedMemoryId: body.expectedMemoryId,
+        expectedText: body.expectedText,
+        note: body.note,
+        source: "api",
+      }),
+      201,
+    )
+  })
+
+  app.get("/api/feedback", async (c) => {
+    const query = c.req.query()
+    return c.json({
+      feedback: await palace.listRecallFeedback(config.userId, {
+        unresolvedOnly: query.unresolved === "1",
+        // An unrecognised verdict is a programming error in the caller, so it is
+        // passed through to be rejected rather than silently widening the list.
+        verdict: query.verdict as RecallVerdict | undefined,
+        limit: query.limit ? Number(query.limit) : 100,
+      }),
+    })
   })
 
   // --- timeline -----------------------------------------------------------

@@ -9,10 +9,14 @@ import type {
   NewObservationInput,
   Observation,
   RecallAudit,
+  RecallFeedback,
+  RecallFeedbackInput,
   RecallQuery,
   RecallResult,
+  RecallVerdict,
   WriteOutcome,
 } from "./memory/types.js"
+import { RECALL_VERDICTS } from "./memory/types.js"
 import { DEFAULT_AUTO_WRITE_TYPES, DEFAULT_CONFIRM_TYPES } from "./policies.js"
 import type { EmbeddingPort, LlmPort } from "./ports/llm.js"
 import type { MemorySearch, MemoryStore } from "./ports/storage.js"
@@ -125,6 +129,64 @@ export class MemoryPalace {
   /** As `recall`, but also returns every candidate and why it was kept or dropped. */
   async recallWithAudit(query: RecallQuery): Promise<RecallAudit> {
     return this.recallPipeline.recallWithAudit(query)
+  }
+
+  // -------------------------------------------------------------------------
+  // Recall feedback
+  // -------------------------------------------------------------------------
+
+  /**
+   * Record what somebody thought of a recall.
+   *
+   * Validation here rather than only in the database because the interesting
+   * failure is silent: a `missed` judgement that does not say what was missed
+   * counts as a data point, shows up in no report, and can never be turned into
+   * the one thing it was collected for.
+   */
+  async recordRecallFeedback(input: RecallFeedbackInput): Promise<RecallFeedback> {
+    const query = input.query?.trim() ?? ""
+    if (query === "") throw new ValidationError("feedback requires the query that was asked")
+
+    if (!RECALL_VERDICTS.includes(input.verdict)) {
+      throw new ValidationError(`unknown verdict: ${String(input.verdict)}`)
+    }
+
+    const expectedId = input.expectedMemoryId?.trim() || undefined
+    const expectedText = input.expectedText?.trim() || undefined
+
+    if (input.verdict === "missed" && !expectedId && !expectedText) {
+      throw new ValidationError(
+        "a missed recall must say what should have come back: expectedMemoryId or expectedText",
+      )
+    }
+
+    // A cross-user reference would be nonsense in every later reading, so it is
+    // refused rather than stored and quietly ignored.
+    if (expectedId) {
+      const memory = await this.store.getMemory(input.userId, expectedId)
+      if (!memory) throw new NotFoundError("memory", expectedId)
+    }
+
+    return this.store.insertRecallFeedback({
+      id: newId("fb"),
+      userId: input.userId,
+      query,
+      recallMode: input.recallMode,
+      returnedIds: input.returnedIds ?? [],
+      verdict: input.verdict,
+      expectedMemoryId: expectedId,
+      expectedText,
+      note: input.note?.trim() || undefined,
+      source: input.source ?? "unknown",
+    })
+  }
+
+  /** Judgements newest-first. `unresolvedOnly` is what the review queue asks for. */
+  async listRecallFeedback(
+    userId: string,
+    options?: { verdict?: RecallVerdict; unresolvedOnly?: boolean; limit?: number },
+  ): Promise<RecallFeedback[]> {
+    return this.store.listRecallFeedback(userId, options)
   }
 
   // -------------------------------------------------------------------------

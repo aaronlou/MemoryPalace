@@ -566,4 +566,50 @@ describe("the interface's own wiring", () => {
     const missing = [...actions].filter((a) => !handlers.has(a))
     expect(missing, `no ACTIONS handler for: ${missing.join(", ")}`).toEqual([])
   })
+
+  describe("the recall feedback card", () => {
+    /**
+     * The card is emitted by the script, so none of the static-markup checks
+     * above cover it. Three things can go wrong there and only show up in a
+     * browser: a verdict button that renders but is never listened to, an input
+     * with no label, and a "missed" report sent without the one field that makes
+     * it usable.
+     */
+    const card = js.slice(
+      js.indexOf("function feedbackCardHtml"),
+      js.indexOf("function pendingFeedbackText"),
+    )
+
+    it("offers all three verdicts", () => {
+      expect(card).toContain('data-verdict="helpful"')
+      expect(card).toContain('data-verdict="not_relevant"')
+      expect(card).toContain('data-verdict="missed"')
+    })
+
+    it("is listened to", () => {
+      // Rendering the buttons is not enough — this is the same class of bug as
+      // the edit/delete buttons that did nothing.
+      expect(js).toMatch(/addEventListener\("click"[\s\S]{0,200}\[data-verdict\]/)
+    })
+
+    it("labels every control it renders", () => {
+      const inputs = [...card.matchAll(/<input id="([^"]+)"/g)].map((m) => m[1]!)
+      expect(inputs.length).toBeGreaterThan(0)
+      for (const id of inputs) {
+        expect(card, `#${id} is rendered without a label`).toContain(`for="${id}"`)
+      }
+    })
+
+    it("will not send a miss that says nothing", () => {
+      const submit = js.slice(js.indexOf("async function submitFeedback"))
+      expect(submit).toContain('verdict === "missed" && expected === ""')
+    })
+
+    it("has wording in every language", () => {
+      for (const lang of languages()) {
+        const value = MESSAGES_BY_LANG[lang]?.["recall.feedback.needsExpectation"]
+        expect(value, `missing in ${lang}`).toBeTruthy()
+      }
+    })
+  })
 })

@@ -12,7 +12,7 @@ Palace is the store that survives that: it ingests what you say, forms memories
 from it, keeps the history when things change, and hands the right few back to
 whatever agent is asking — over MCP, in the agent's own context window.
 
-> Status: v0.1, working end to end. 243 tests green. Everything — including the
+> Status: v0.1, working end to end. 263 tests green. Everything — including the
 > evaluation suite — runs offline on mock providers, so the documented entry path
 > works with no API key and no network. CI runs lint, the build, the suite and the
 > walkthrough three times on every push, one of them from a fresh clone.
@@ -249,6 +249,7 @@ sequenceDiagram
 | `memory_forget` | Retiring or permanently deleting |
 | `memory_confirm` | Reviewing what is awaiting confirmation |
 | `memory_stats` | Checking whether anything is known at all |
+| `memory_feedback` | Reporting that a recall was wrong or incomplete — say **what** was missing |
 
 Tool descriptions are written as prompts, not as API docs — that is the only thing
 the model sees when deciding whether to call one.
@@ -382,6 +383,29 @@ dataset got harder about, what is still weak — is on one page:
 [**the evaluation page**](./docs/EVALUATION.md). The retrieval thresholds and the
 evidence behind each are in [how recall decides](./docs/RECALL.md).
 
+### Closing the loop: judging a recall where it happened
+
+Every number above measures questions somebody typed by hand. That is the
+bottleneck: the golden set grows at the speed somebody writes it, which is also the
+speed at which this system can be told it got something wrong.
+
+So a failure can be recorded where it is still obvious — in the moment. The recall
+test offers three verdicts in the web UI, and `memory_feedback` lets an agent file
+the same thing after a wrong answer. Each row keeps the query verbatim *and*
+everything recall returned, because "they disliked memory X" is unreadable once
+that version has been superseded.
+
+Two commands close the loop. `pnpm feedback review` prints what has accumulated as
+candidate test cases — printed, never appended, because deciding what belongs in
+the benchmark is a judgement, and a script that edited it would also silently change
+what every later comparison means. `pnpm feedback promote <fb> <case>` records the
+link once you have adopted one. A `missed` verdict without an expectation is
+refused: it could be counted but never acted on.
+
+What none of this does is change your recalls. Nothing in recall reads these rows —
+the moment it did, the labels would become part of the system instead of a
+measurement of it.
+
 > **The test suite and the evaluation harness are destructive**: each truncates the
 > memory tables in whatever database `DATABASE_URL` points at. Both default to a
 > separate scratch database (`pnpm db:test` creates it), and both **refuse to run
@@ -451,6 +475,8 @@ startup with the exact commands to fix it.
 | `pnpm eval --embedding mock\|real` | vary the embedder independently of the LLM |
 | `pnpm eval:compare A B` | diff two runs — refuses to compare across a changed dataset, mode or embedder |
 | `pnpm prior-art check` / `seed` / `list` | the reference list behind the algorithm — `check` resolves every claim against this checkout |
+| `pnpm feedback review` | print unresolved recall judgements as candidate test cases |
+| `pnpm feedback promote <fb> <case>` | record that a judgement became that golden-set case |
 | `pnpm build` | typecheck and emit `dist/`, plus `scripts/` and `evals/` (`tsconfig.tools.json`) |
 | `pnpm lint` / `format` | Biome |
 

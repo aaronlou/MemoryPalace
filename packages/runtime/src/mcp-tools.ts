@@ -50,6 +50,8 @@ Use it in two situations:
 - BEFORE answering a question where knowing the user's own context, preferences or history would change your answer, call memory_recall.
 - WHENEVER the user states something durable about themselves — a preference, a goal, a decision, a correction — call memory_remember so it is available next time.
 
+- AFTER a recall that was wrong or incomplete — something irrelevant came back, or something you expected did not — call memory_feedback. Silence after a good recall is correct; do not report routine successes.
+
 Do not call memory_remember for the current question, for one-off tasks, or for anything you would have to guess at. It is normal and correct for recall to return nothing.
 
 When recall returns a memory containing a validity range, respect it: a memory marked 已失效 is no longer true and must not be presented as the current state.`
@@ -422,6 +424,68 @@ export function registerTools(
   // -------------------------------------------------------------------------
   // memory_stats
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // memory_feedback — the counterpart to recall
+  // -------------------------------------------------------------------------
+  //
+  // The eighth tool, against this file's own preference for few. It earns the
+  // slot because it overlaps nothing: every other tool either reads or writes
+  // memories, and none accepts a judgement about one. Without it the store can
+  // only ever be told it was right — a recall that returned nothing leaves no
+  // trace anywhere, because from the store's side a query merely happened.
+  server.registerTool(
+    "memory_feedback",
+    {
+      title: "Recall feedback",
+      description:
+        "Tell the store whether a recall answered the question. Call it after memory_recall when " +
+        "what came back was beside the point, or when you know something should have come back and " +
+        "it did not. Say what you expected. Do NOT call it after every recall — only when the answer " +
+        "was actually wrong or actually missing; silence is the normal, correct case. Nothing here " +
+        "changes future recalls: it records evidence for fixing the ranking later.",
+      inputSchema: z.object({
+        query: z.string().describe("The recall query exactly as you asked it."),
+        verdict: z
+          .enum(["helpful", "not_relevant", "missed"])
+          .describe(
+            "helpful = it was the right material; not_relevant = it returned things that had " +
+              "nothing to do with the question; missed = the thing that mattered did not come back.",
+          ),
+        returnedIds: z
+          .array(z.string())
+          .optional()
+          .describe("The ids you were given, any order. Include ones you judged wrong."),
+        expectedText: z
+          .string()
+          .optional()
+          .describe(
+            "Required when verdict is 'missed': what SHOULD have come back, in your own words. " +
+              "This is the whole point of the report — a complaint without it cannot be fixed.",
+          ),
+        recallMode: z.enum(["fast", "smart"]).optional(),
+        note: z.string().optional().describe("Anything that explains the verdict."),
+      }),
+    },
+    async (args) => {
+      const result = await guard(() =>
+        palace.recordRecallFeedback({
+          userId: defaultUserId,
+          query: args.query,
+          recallMode: args.recallMode ?? "fast",
+          returnedIds: args.returnedIds ?? [],
+          verdict: args.verdict,
+          expectedText: args.expectedText,
+          note: args.note,
+          source: "mcp",
+        }),
+      )
+      if (!result.ok) return errorText(`feedback failed — ${result.message}`)
+      return text(
+        `Recorded. ${result.value.verdict}${result.value.expectedText ? `: ${result.value.expectedText}` : ""}`,
+      )
+    },
+  )
+
   server.registerTool(
     "memory_stats",
     {

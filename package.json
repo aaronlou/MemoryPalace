@@ -43,7 +43,8 @@
     "backup:check": "tsx --tsconfig tsconfig.tools.json scripts/backup.ts check",
     "embedding:dim": "tsx --tsconfig tsconfig.tools.json scripts/embedding.ts dim",
     "embedding:reembed": "tsx --tsconfig tsconfig.tools.json scripts/embedding.ts reembed",
-    "embedding:status": "tsx --tsconfig tsconfig.tools.json scripts/embedding.ts status"
+    "embedding:status": "tsx --tsconfig tsconfig.tools.json scripts/embedding.ts status",
+    "feedback": "tsx --tsconfig tsconfig.tools.json scripts/feedback.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

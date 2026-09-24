@@ -317,3 +317,55 @@ export interface RecallAudit {
   /** Every candidate with its rank, including ones that were filtered out. */
   considered: Array<{ memoryId: string; score: number; kept: boolean; reason: string }>
 }
+
+/**
+ * What the person who asked the question thought of the answer.
+ *
+ * `helpful` matters as much as the other two even though only failures are
+ * interesting to fix: a benchmark made entirely of failures would be optimising
+ * against a store that only ever gets things wrong.
+ *
+ * `not_relevant` and `missed` are kept apart because they cost different things
+ * to fix. The first is precision — judging evidence better. The second may be
+ * recall proper (a memory exists and was not found) or a formation failure (the
+ * memory was never extracted at all), and those are different repairs.
+ */
+export const RECALL_VERDICTS = ["helpful", "not_relevant", "missed"] as const
+export type RecallVerdict = (typeof RECALL_VERDICTS)[number]
+
+/** Where a judgement came from, which decides how much context it carries. */
+export const RECALL_FEEDBACK_SOURCES = ["web", "mcp", "api", "unknown"] as const
+export type RecallFeedbackSource = (typeof RECALL_FEEDBACK_SOURCES)[number]
+
+export interface RecallFeedbackInput {
+  userId: string
+  /** The query verbatim — the only form in which it can become a test case. */
+  query: string
+  recallMode: Exclude<RecallMode, "auto">
+  /**
+   * What recall returned, in order, including anything later judged wrong.
+   *
+   * Kept whole rather than reduced to the offending id because that is what a
+   * later reading needs: at the time of labelling nobody knows which half of the
+   * result mattered, and a verdict that cannot be reconstructed is only a count.
+   */
+  returnedIds: string[]
+  verdict: RecallVerdict
+  /** Set when the answer was a memory the store already holds. */
+  expectedMemoryId?: string
+  /** Set when the answer was never stored, or should read differently. */
+  expectedText?: string
+  note?: string
+  source?: RecallFeedbackSource
+}
+
+export interface RecallFeedback extends RecallFeedbackInput {
+  id: string
+  source: RecallFeedbackSource
+  createdAt: IsoDateTime
+  /** The golden-set case this became, once a human decided it should. */
+  promotedTo: string | null
+}
+
+/** A judgement ready to persist: the caller mints the id, as for every other row. */
+export type RecallFeedbackInsert = RecallFeedbackInput & { id: string }

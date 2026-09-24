@@ -50,7 +50,7 @@ export function ulidTime(id: string): Date | null {
  * Prefixed ids make a raw database dump or log line self-describing:
  * `mem_...` is a memory, `obs_...` is an observation.
  */
-export type IdPrefix = "obs" | "mem" | "rel" | "ent" | "src" | "run" | "pol" | "pa"
+export type IdPrefix = "obs" | "mem" | "rel" | "ent" | "src" | "run" | "pol" | "pa" | "fb"
 
 export function newId(prefix: IdPrefix, now?: number): string {
   return `${prefix}_${ulid(now)}`

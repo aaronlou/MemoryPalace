@@ -333,6 +333,77 @@ describe("the confirmation queue", () => {
   })
 })
 
+describe("recall feedback", () => {
+  /** A stored row as the API returns it. */
+  interface ApiFeedback {
+    id: string
+    query: string
+    verdict: string
+    returnedIds: string[]
+    expectedText?: string
+    promotedTo: string | null
+  }
+
+  /** Same shape as `post`, narrowed to the feedback route. */
+  const record = (body: Record<string, unknown>) => post<ApiFeedback>("/api/feedback", body)
+
+  it("records a judgement and returns everything needed to review it later", async () => {
+    const { status, body } = await record({
+      query: "用户之前用什么框架？",
+      recallMode: "smart",
+      returnedIds: ["mem_returned"],
+      verdict: "missed",
+      expectedText: "用户之前用 Vue",
+      note: "从 Web 界面录的",
+    })
+
+    expect(status).toBe(201)
+    expect(body.verdict).toBe("missed")
+    expect(body.returnedIds).toEqual(["mem_returned"])
+    expect(body.promotedTo).toBeNull()
+
+    // What makes this worth having: a later reading can see the whole
+    // transaction, not just that somebody was unhappy.
+    const listed = await json<{ feedback: ApiFeedback[] }>("/api/feedback")
+    expect(listed.body.feedback.map((f) => f.query)).toEqual(["用户之前用什么框架？"])
+  })
+
+  it("refuses a miss that says nothing about the miss", async () => {
+    const { status } = await record({
+      query: "用户之前用什么框架？",
+      returnedIds: [],
+      verdict: "missed",
+    })
+
+    // 400 rather than a stored row nobody can act on.
+    expect(status).toBe(400)
+  })
+
+  it("separates the review queue from what has already been dealt with", async () => {
+    const { body: dealt } = await record({
+      query: "已经转成用例的",
+      returnedIds: [],
+      verdict: "helpful",
+    })
+    await record({
+      query: "还没处理的",
+      returnedIds: [],
+      verdict: "missed",
+      expectedText: "缺的内容",
+    })
+    // Promotion happens once a case has been adopted into the golden set; until
+    // then the row belongs in the queue.
+    await rt.storage.store.markFeedbackPromoted(USER, dealt.id, "rec-900")
+
+    const unresolved = await json<{ feedback: ApiFeedback[] }>("/api/feedback?unresolved=1")
+    expect(unresolved.body.feedback.map((f) => f.query)).toEqual(["还没处理的"])
+
+    const all = await json<{ feedback: ApiFeedback[] }>("/api/feedback")
+    expect(all.body.feedback).toHaveLength(2)
+    expect(all.body.feedback.find((f) => f.id === dealt.id)?.promotedTo).toBe("rec-900")
+  })
+})
+
 describe("timeline", () => {
   it("returns every version ordered by when it was true", async () => {
     await remember("我一直在用 Vue。", { occurredAt: "2025-01-01T00:00:00.000Z" })

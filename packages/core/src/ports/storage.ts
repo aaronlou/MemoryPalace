@@ -10,6 +10,9 @@ import type {
   MemoryStatus,
   Observation,
   ObservationStatus,
+  RecallFeedback,
+  RecallFeedbackInsert,
+  RecallVerdict,
   RelationKind,
 } from "../memory/types.js"
 import type {
@@ -127,6 +130,30 @@ export interface MemoryStore {
     to?: IsoDateTime,
     excludeIds?: string[],
   ): Promise<Memory[]>
+
+  // --- recall feedback -----------------------------------------------------
+  /**
+   * Record what somebody thought of a recall, alongside everything that recall
+   * returned, so the judgement can be re-read without the conversation that
+   * produced it. Returns the stored row because the id and timestamp are the
+   * caller's only handle on it afterwards.
+   */
+  insertRecallFeedback(feedback: RecallFeedbackInsert): Promise<RecallFeedback>
+  /**
+   * Judgements newest-first. `unresolvedOnly` is the review queue: rows that
+   * have not yet become golden-set cases.
+   */
+  listRecallFeedback(
+    userId: string,
+    options?: { verdict?: RecallVerdict; unresolvedOnly?: boolean; limit?: number },
+  ): Promise<RecallFeedback[]>
+  /**
+   * Name the golden-set case a judgement became.
+   *
+   * Recorded rather than recomputed because "already covered" is a human
+   * decision about the dataset, and it has to survive the dataset being edited.
+   */
+  markFeedbackPromoted(userId: string, id: string, caseId: string): Promise<void>
 
   // --- temporal queries ----------------------------------------------------
   /** Memories whose valid-time interval contains `at`. */

@@ -12,6 +12,9 @@ import type {
   MemoryStore,
   Observation,
   ObservationStatus,
+  RecallFeedback,
+  RecallFeedbackInsert,
+  RecallVerdict,
   RelationKind,
 } from "@memory-palace/core"
 import type { IsoDateTime } from "@memory-palace/shared"
@@ -728,6 +731,75 @@ export class PgMemoryStore implements MemoryStore {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Recall feedback
+  // -------------------------------------------------------------------------
+
+  async insertRecallFeedback(feedback: RecallFeedbackInsert): Promise<RecallFeedback> {
+    const rows = await this.q<FeedbackRow>(
+      `INSERT INTO recall_feedback
+         (id, user_id, query, recall_mode, returned_ids, verdict,
+          expected_memory_id, expected_text, note, source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
+      [
+        feedback.id,
+        feedback.userId,
+        feedback.query,
+        feedback.recallMode,
+        JSON.stringify(feedback.returnedIds),
+        feedback.verdict,
+        feedback.expectedMemoryId ?? null,
+        feedback.expectedText?.trim() || null,
+        feedback.note?.trim() || null,
+        feedback.source ?? "unknown",
+      ],
+    )
+    const row = rows[0]
+    if (!row) {
+      // Unreachable with RETURNING, but losing a judgement silently is the one
+      // way to make the feedback loop lie: the count would look healthy while
+      // nothing survives to be reviewed.
+      throw new Error("insertRecallFeedback inserted nothing and matched nothing")
+    }
+    return toFeedback(row)
+  }
+
+  async listRecallFeedback(
+    userId: string,
+    options: { verdict?: RecallVerdict; unresolvedOnly?: boolean; limit?: number } = {},
+  ): Promise<RecallFeedback[]> {
+    // Every condition is a parameter. The only pieces of SQL assembled here are
+    // placeholders, never values.
+    const where = ["user_id = $1"]
+    const params: unknown[] = [userId]
+
+    if (options.verdict) {
+      params.push(options.verdict)
+      where.push(`verdict = $${params.length}`)
+    }
+    if (options.unresolvedOnly) where.push("promoted_to IS NULL")
+
+    params.push(Math.min(Math.max(options.limit ?? 100, 1), 1000))
+
+    const rows = await this.q<FeedbackRow>(
+      `SELECT * FROM recall_feedback
+        WHERE ${where.join(" AND ")}
+        ORDER BY created_at DESC
+        LIMIT $${params.length}`,
+      params,
+    )
+    return rows.map(toFeedback)
+  }
+
+  async markFeedbackPromoted(userId: string, id: string, caseId: string): Promise<void> {
+    await this.q("UPDATE recall_feedback SET promoted_to = $3 WHERE user_id = $1 AND id = $2", [
+      userId,
+      id,
+      caseId,
+    ])
+  }
+
   async upsertAgentPolicy(policy: AgentPolicy): Promise<void> {
     await this.q(
       `INSERT INTO agent_policies
@@ -906,6 +978,40 @@ interface PolicyRow extends pg.QueryResultRow {
   require_confirmation_for: string[]
   can_write: boolean
   created_at: Date
+}
+
+interface FeedbackRow extends pg.QueryResultRow {
+  id: string
+  user_id: string
+  query: string
+  recall_mode: string
+  returned_ids: unknown
+  verdict: string
+  expected_memory_id: string | null
+  expected_text: string | null
+  note: string | null
+  source: string
+  promoted_to: string | null
+  created_at: Date
+}
+
+function toFeedback(row: FeedbackRow): RecallFeedback {
+  const returned = Array.isArray(row.returned_ids) ? row.returned_ids : []
+  return {
+    id: row.id,
+    userId: row.user_id,
+    query: row.query,
+    recallMode: row.recall_mode as RecallFeedback["recallMode"],
+    // pg returns jsonb already parsed; the cast only narrows element types.
+    returnedIds: returned.filter((id): id is string => typeof id === "string"),
+    verdict: row.verdict as RecallFeedback["verdict"],
+    expectedMemoryId: row.expected_memory_id ?? undefined,
+    expectedText: row.expected_text ?? undefined,
+    note: row.note ?? undefined,
+    source: row.source as RecallFeedback["source"],
+    promotedTo: row.promoted_to,
+    createdAt: toIso(row.created_at),
+  }
 }
 
 function toIso(value: Date | string): string {

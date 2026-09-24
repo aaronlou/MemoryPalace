@@ -42,6 +42,16 @@ const STATE = {
   loading: false,
   selected: null,
   lastFocus: null,
+  /**
+   * The recall the feedback buttons refer to.
+   *
+   * Held so judging one takes a single click. Anything that has to be retyped
+   * will be retyped wrong or not at all, and the whole point of this control is
+   * that it costs nothing at the moment the failure is obvious.
+   */
+  lastRecall: null,
+  /** Judgements recorded but not yet turned into a golden-set case. */
+  feedbackPending: 0,
 }
 
 // ---------------------------------------------------------------- transport --
@@ -320,6 +330,8 @@ function renderRecall(audit) {
   const el = $("#recall-result")
 
   if (result.memories.length === 0) {
+    // Still offers the feedback card: an empty answer is the case the store is
+    // least able to learn from on its own, so it is the one most worth reporting.
     el.innerHTML = `
       <div class="empty">
         <h3>${esc(t("recall.empty.title"))}</h3>
@@ -330,7 +342,8 @@ function renderRecall(audit) {
             routes: result.diagnostics.routesUsed.length || 0,
           }),
         )}</p>
-      </div>`
+      </div>
+      ${feedbackCardHtml()}`
     return
   }
 
@@ -389,7 +402,106 @@ function renderRecall(audit) {
            </div>`
         : ""
     }
+
+    ${feedbackCardHtml()}
   `
+}
+
+/**
+ * The feedback card: three verdicts and, for "missed", what should have come back.
+ *
+ * Rendered after every recall rather than only after a bad one, because asking
+ * "was this any use?" is how you find out quietly failures exist — whereas a
+ * button labelled "report a problem" is only pressed once somebody is annoyed
+ * enough.
+ *
+ * The expectation field is the reason this exists at all. A complaint with no
+ * expectation can be counted but not acted on, so the `missed` verdict refuses
+ * to be filed without one.
+ */
+function feedbackCardHtml() {
+  return `
+    <div class="card">
+      <h3>${esc(t("recall.feedback.title"))}</h3>
+      <p class="hint">${esc(t("recall.feedback.body"))}</p>
+      <div class="button-row">
+        <button type="button" class="btn btn--sm" data-verdict="helpful">${esc(
+          t("recall.feedback.helpful"),
+        )}</button>
+        <button type="button" class="btn btn--sm" data-verdict="not_relevant">${esc(
+          t("recall.feedback.notRelevant"),
+        )}</button>
+        <button type="button" class="btn btn--sm" data-verdict="missed">${esc(
+          t("recall.feedback.missed"),
+        )}</button>
+      </div>
+      <div class="toolbar">
+        <div class="field field--grow">
+          <label for="feedback-expected">${esc(t("recall.feedback.expected.label"))}</label>
+          <input id="feedback-expected" type="text"
+                 placeholder="${esc(t("recall.feedback.expected.placeholder"))}" />
+        </div>
+        <div class="field field--grow">
+          <label for="feedback-note">${esc(t("recall.feedback.note.label"))}</label>
+          <input id="feedback-note" type="text"
+                 placeholder="${esc(t("recall.feedback.note.placeholder"))}" />
+        </div>
+      </div>
+      <p class="hint" id="feedback-pending">${esc(pendingFeedbackText())}</p>
+    </div>`
+}
+
+function pendingFeedbackText() {
+  return STATE.feedbackPending > 0
+    ? t("recall.feedback.pending", { count: STATE.feedbackPending })
+    : t("recall.feedback.pendingNone")
+}
+
+/** How many judgements are waiting to become test cases. Never throws: it decorates. */
+async function refreshFeedbackCount() {
+  try {
+    const { feedback } = await api("/api/feedback?unresolved=1&limit=200")
+    STATE.feedbackPending = feedback.length
+    const target = $("#feedback-pending")
+    if (target) target.textContent = pendingFeedbackText()
+  } catch {
+    // A count failing to load must not disturb the recall result it annotates.
+  }
+}
+
+async function submitFeedback(verdict, button) {
+  if (!STATE.lastRecall) return
+  const expected = ($("#feedback-expected")?.value ?? "").trim()
+  const note = ($("#feedback-note")?.value ?? "").trim()
+
+  if (verdict === "missed" && expected === "") {
+    toast(t("recall.feedback.needsExpectation"), "error")
+    $("#feedback-expected")?.focus()
+    return
+  }
+
+  button.disabled = true
+  try {
+    await api("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify({
+        query: STATE.lastRecall.query,
+        recallMode: STATE.lastRecall.mode,
+        returnedIds: STATE.lastRecall.ids,
+        verdict,
+        expectedText: expected || undefined,
+        note: note || undefined,
+      }),
+    })
+    toast(t("recall.feedback.saved"))
+    if ($("#feedback-expected")) $("#feedback-expected").value = ""
+    if ($("#feedback-note")) $("#feedback-note").value = ""
+    await refreshFeedbackCount()
+  } catch (error) {
+    toast(t("recall.feedback.failed", { message: error.message }), "error")
+  } finally {
+    button.disabled = false
+  }
 }
 
 // ---------------------------------------------------------------- actions ---
@@ -858,10 +970,24 @@ function init() {
           audit: true,
         }),
       })
+      STATE.lastRecall = {
+        query: $("#recall-q").value,
+        mode: audit.result.mode,
+        ids: audit.result.memories.map((m) => m.memory.id),
+      }
       renderRecall(audit)
+      await refreshFeedbackCount()
     } catch (error) {
       el.innerHTML = `<div class="error-box">${esc(error.message)}</div>`
     }
+  })
+
+  // Feedback on a recall. Delegated because the card is re-rendered with every
+  // recall, and a listener bound to the buttons would die with the old markup.
+  $("#recall-result").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-verdict]")
+    if (!button) return
+    Promise.resolve(submitFeedback(button.dataset.verdict, button)).catch(reportError)
   })
 
   // List interactions (event delegation; lists are re-rendered often)

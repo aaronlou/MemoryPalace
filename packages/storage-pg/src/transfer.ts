@@ -33,6 +33,14 @@ export interface TransferBundle {
   runs: Array<Record<string, unknown>>
   /** Absent from bundles written before prior art existed; treated as empty. */
   priorArt?: Array<Record<string, unknown>>
+  /**
+   * Absent from bundles written before feedback existed; treated as empty.
+   *
+   * Included rather than left behind: this is evidence about recall quality, and
+   * it is the least recoverable data in the store — it was typed by a human at a
+   * moment nobody can get back.
+   */
+  recallFeedback?: Array<Record<string, unknown>>
 }
 
 export interface ExportOptions {
@@ -45,22 +53,32 @@ export async function exportAll(
   userId: string,
   options: ExportOptions = {},
 ): Promise<TransferBundle> {
-  const [observations, memories, relations, entities, memoryEntities, policies, runs, priorArt] =
-    await Promise.all([
-      db.query("SELECT * FROM observations WHERE user_id = $1 ORDER BY created_at", [userId]),
-      db.query("SELECT * FROM memories WHERE user_id = $1 ORDER BY recorded_at", [userId]),
-      db.query("SELECT * FROM memory_relations WHERE user_id = $1 ORDER BY created_at", [userId]),
-      db.query("SELECT * FROM entities WHERE user_id = $1 ORDER BY created_at", [userId]),
-      db.query(
-        `SELECT me.* FROM memory_entities me
+  const [
+    observations,
+    memories,
+    relations,
+    entities,
+    memoryEntities,
+    policies,
+    runs,
+    priorArt,
+    feedback,
+  ] = await Promise.all([
+    db.query("SELECT * FROM observations WHERE user_id = $1 ORDER BY created_at", [userId]),
+    db.query("SELECT * FROM memories WHERE user_id = $1 ORDER BY recorded_at", [userId]),
+    db.query("SELECT * FROM memory_relations WHERE user_id = $1 ORDER BY created_at", [userId]),
+    db.query("SELECT * FROM entities WHERE user_id = $1 ORDER BY created_at", [userId]),
+    db.query(
+      `SELECT me.* FROM memory_entities me
            JOIN memories m ON m.id = me.memory_id
           WHERE m.user_id = $1`,
-        [userId],
-      ),
-      db.query("SELECT * FROM agent_policies WHERE user_id = $1", [userId]),
-      db.query("SELECT * FROM extraction_runs WHERE user_id = $1 ORDER BY created_at", [userId]),
-      db.query("SELECT * FROM prior_art WHERE user_id = $1 ORDER BY added_at", [userId]),
-    ])
+      [userId],
+    ),
+    db.query("SELECT * FROM agent_policies WHERE user_id = $1", [userId]),
+    db.query("SELECT * FROM extraction_runs WHERE user_id = $1 ORDER BY created_at", [userId]),
+    db.query("SELECT * FROM prior_art WHERE user_id = $1 ORDER BY added_at", [userId]),
+    db.query("SELECT * FROM recall_feedback WHERE user_id = $1 ORDER BY created_at", [userId]),
+  ])
 
   const bundle: TransferBundle = {
     format: "memory-palace/export",
@@ -76,6 +94,7 @@ export async function exportAll(
     policies: policies.rows.map(stripNulls),
     runs: runs.rows.map(stripNulls),
     priorArt: priorArt.rows.map(stripNulls),
+    recallFeedback: feedback.rows.map(stripNulls),
   }
 
   if (options.includeEmbeddings) {
@@ -107,6 +126,7 @@ export interface ImportResult {
   policies: number
   embeddings: number
   priorArt: number
+  recallFeedback: number
 }
 
 export interface ImportOptions {
@@ -146,6 +166,7 @@ export async function importAll(
       policies: 0,
       embeddings: 0,
       priorArt: 0,
+      recallFeedback: 0,
     }
 
     // Order matters: foreign keys require referenced rows to exist first.
@@ -188,6 +209,7 @@ export async function importAll(
       [],
       ["user_id", "repo"],
     )
+    result.recallFeedback = await insertRows(client, "recall_feedback", bundle.recallFeedback ?? [])
 
     // The schema_migrations table is intentionally NOT part of a bundle: schema
     // version is a property of the deployment, not of the user's data.
@@ -221,6 +243,10 @@ export async function wipeUser(
     // "erase me" that left the reference list behind would be a lie, and the whole
     // point of this layer is that "delete" really deletes.
     await c.query("DELETE FROM prior_art WHERE user_id = $1", [userId])
+    // Same argument as prior art: no foreign key to anything the deletes above
+    // touch, and leaving it behind would mean an "erase me" that kept a record
+    // of what the user judged.
+    await c.query("DELETE FROM recall_feedback WHERE user_id = $1", [userId])
     await c.query("DELETE FROM memories WHERE user_id = $1", [userId])
     await c.query("DELETE FROM observations WHERE user_id = $1", [userId])
     await c.query("DELETE FROM entities WHERE user_id = $1", [userId])

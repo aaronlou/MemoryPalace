@@ -79,8 +79,14 @@ describe("server handshake", () => {
   it("exposes a small, non-overlapping tool set", async () => {
     const { tools } = await client.listTools()
     const names = tools.map((t) => t.name).sort()
+    // `memory_feedback` joined this set, which is why the assertion exists: every
+    // tool costs selection accuracy, so adding one has to be a decision someone
+    // makes in the open rather than a drift nobody noticed. It earns the slot by
+    // overlapping nothing — the other seven read or write memories, and none of
+    // them accepts a judgement about one.
     expect(names).toEqual([
       "memory_confirm",
+      "memory_feedback",
       "memory_forget",
       "memory_recall",
       "memory_remember",

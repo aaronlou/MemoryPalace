@@ -13,3 +13,4 @@ that were rejected, and what the decision costs.
 | [0006](./0006-confirmed-rescue-below-the-semantic-floor.md) | A below-floor candidate is recalled only if the reranker confirms it |
 | [0007](./0007-the-rerankers-judgement-is-binding.md) | The reranker's "not useful" verdict is binding, when the reranker can be trusted |
 | [0008](./0008-history-is-not-clamped-to-now.md) | A history question is not clamped to now |
+| [0009](./0009-recall-feedback-is-recorded-not-consumed.md) | Recall feedback is recorded, not consumed |

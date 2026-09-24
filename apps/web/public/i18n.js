@@ -138,6 +138,28 @@ const MESSAGES = {
     "recall.filtered.reason": "Reason",
     "recall.filtered.count": "Count",
 
+    // Recall feedback. The wording has to carry the whole argument for why
+    // anybody should press anything: the store cannot see a failed recall from
+    // the inside, so without this it only ever hears about the misses nobody
+    // mentions.
+    "recall.feedback.title": "Did this recall help?",
+    "recall.feedback.body":
+      "A recall that returned nothing, or the wrong few, leaves no trace anywhere else — from the store's side a query simply happened. Recording it here does not change future recalls; it becomes a candidate test case, which is how ranking gets fixed.",
+    "recall.feedback.helpful": "The right material",
+    "recall.feedback.notRelevant": "Some of it was beside the point",
+    "recall.feedback.missed": "Something was missing",
+    "recall.feedback.expected.label": "What should have come back",
+    "recall.feedback.expected.placeholder":
+      "e.g. that the user used Vue before switching to React",
+    "recall.feedback.note.label": "Anything else (optional)",
+    "recall.feedback.note.placeholder": "Context worth keeping",
+    "recall.feedback.needsExpectation":
+      "Say what was missing first — without that it cannot become a test case.",
+    "recall.feedback.saved": "Recorded. It waits here until somebody turns it into a test case.",
+    "recall.feedback.failed": "Could not record it: {message}",
+    "recall.feedback.pending": "{count} judgement(s) waiting to become a test case",
+    "recall.feedback.pendingNone": "Nothing waiting.",
+
     "settings.heading": "Settings and data",
     "settings.data.title": "Your data is yours",
     "settings.data.lede":
@@ -394,6 +416,22 @@ const MESSAGES = {
     "recall.filtered.title": "被过滤掉的内容",
     "recall.filtered.reason": "原因",
     "recall.filtered.count": "数量",
+
+    "recall.feedback.title": "这次召回有用吗？",
+    "recall.feedback.body":
+      "召回什么都没返回、或者返回了不对的几条，系统自己是不知道的——在它看来只是发生了又一次查询。在这里记下来不会改变以后的召回，它会成为候选评测用例，而排序就是这样才有可能被修好。",
+    "recall.feedback.helpful": "内容是对的",
+    "recall.feedback.notRelevant": "有些内容跑题了",
+    "recall.feedback.missed": "漏掉了东西",
+    "recall.feedback.expected.label": "本该召回的是什么",
+    "recall.feedback.expected.placeholder": "例如：用户之前用 Vue，后来换成 React",
+    "recall.feedback.note.label": "补充说明（可选）",
+    "recall.feedback.note.placeholder": "值得保留的上下文",
+    "recall.feedback.needsExpectation": "先填上漏了什么——否则这条没法变成评测用例。",
+    "recall.feedback.saved": "已记录。它会留在这里，直到有人把它转成评测用例。",
+    "recall.feedback.failed": "没能记录：{message}",
+    "recall.feedback.pending": "有 {count} 条评价等待转成评测用例",
+    "recall.feedback.pendingNone": "没有等待处理的评价。",
 
     "settings.heading": "设置与数据",
     "settings.data.title": "你的数据是你的",
