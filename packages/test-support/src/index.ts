@@ -66,7 +66,22 @@ export const stubRepoFetcher: RepoFetcher = {
     }
   },
 }
-const DEFAULT_TEST_DB = TEST_DATABASE_URL
+/**
+ * What every test runtime connects to, decided once, here.
+ *
+ * It is resolved at import time rather than per call because `.env` is loaded
+ * lazily, by the first `createRuntime`. Reading `process.env.DATABASE_URL` at
+ * each call therefore resolves *differently within one process*: the first
+ * runtime used the test database and every runtime created afterwards silently
+ * used whatever `.env` pointed at — normally the development database. That is
+ * how scoped runtimes came to write into the user's own store, and how a test
+ * could persist into one database and assert against another.
+ *
+ * Freezing it keeps the two sources of truth distinct: an exported
+ * `DATABASE_URL` (what CI sets, what an operator exports) is honoured, while
+ * `.env` — which configures the application, not the suite — cannot redirect it.
+ */
+export const TEST_DB_URL = process.env.DATABASE_URL ?? TEST_DATABASE_URL
 
 /**
  * Async because the embedding width is read from the schema.
@@ -78,7 +93,7 @@ const DEFAULT_TEST_DB = TEST_DATABASE_URL
 export async function createTestRuntime(options: TestRuntimeOptions = {}): Promise<TestRuntime> {
   const userId = options.userId ?? "test-user"
   const clock = new FixedClock(options.now ?? "2026-09-21T12:00:00.000Z")
-  const databaseUrl = options.config?.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB
+  const databaseUrl = options.config?.databaseUrl ?? TEST_DB_URL
   const schemaDim = await schemaEmbeddingDim(databaseUrl)
 
   const override = options.config ?? {}
@@ -90,7 +105,7 @@ export async function createTestRuntime(options: TestRuntimeOptions = {}): Promi
     repoFetcher: options.repoFetcher ?? stubRepoFetcher,
     config: {
       ...override,
-      databaseUrl: override.databaseUrl ?? process.env.DATABASE_URL ?? DEFAULT_TEST_DB,
+      databaseUrl: override.databaseUrl ?? TEST_DB_URL,
       userId: override.userId ?? userId,
       logLevel: override.logLevel ?? "error",
       // Mock providers: the suite must run with no credentials and no network.
@@ -115,9 +130,7 @@ export async function createTestRuntime(options: TestRuntimeOptions = {}): Promi
  * the right length, and it has to learn that length the same way the runtime
  * does — from the database, not from a constant.
  */
-export async function schemaEmbeddingDim(
-  databaseUrl: string = process.env.DATABASE_URL ?? DEFAULT_TEST_DB,
-): Promise<number> {
+export async function schemaEmbeddingDim(databaseUrl: string = TEST_DB_URL): Promise<number> {
   const probe = new PgDatabase(databaseUrl, 1)
   try {
     return (await readEmbeddingDim(probe)) ?? VECTOR_DIM

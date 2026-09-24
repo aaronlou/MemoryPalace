@@ -12,7 +12,7 @@ Palace is the store that survives that: it ingests what you say, forms memories
 from it, keeps the history when things change, and hands the right few back to
 whatever agent is asking — over MCP, in the agent's own context window.
 
-> Status: v0.1, working end to end. 237 tests green. Everything — including the
+> Status: v0.1, working end to end. 243 tests green. Everything — including the
 > evaluation suite — runs offline on mock providers, so the documented entry path
 > works with no API key and no network. CI runs lint, the build, the suite and the
 > walkthrough three times on every push, one of them from a fresh clone.
